@@ -3,6 +3,7 @@ using ReceptionistAgent.Core.Services;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Session;
 using Microsoft.SemanticKernel;
+using Microsoft.Extensions.Logging;
 
 namespace ReceptionistAgent.AI.Plugins;
 
@@ -11,12 +12,18 @@ public class BookingPlugin
     private readonly IBookingService _bookingService;
     private readonly ISessionContext _sessionContext;
     private readonly TenantContext _tenantContext;
+    private readonly ILogger<BookingPlugin> _logger;
 
-    public BookingPlugin(IBookingService bookingService, ISessionContext sessionContext, TenantContext tenantContext)
+    public BookingPlugin(
+        IBookingService bookingService,
+        ISessionContext sessionContext,
+        TenantContext tenantContext,
+        ILogger<BookingPlugin> logger)
     {
         _bookingService = bookingService;
         _sessionContext = sessionContext;
         _tenantContext = tenantContext;
+        _logger = logger;
     }
 
     private DateTime GetTenantCurrentDate()
@@ -27,8 +34,9 @@ public class BookingPlugin
             var tzInfo = TimeZoneInfo.FindSystemTimeZoneById(tzId);
             return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tzInfo).Date;
         }
-        catch (TimeZoneNotFoundException)
+        catch (TimeZoneNotFoundException ex)
         {
+            _logger.LogWarning(ex, "Zona horaria '{TimeZoneId}' no encontrada para el tenant actual. Usando fecha UTC como respaldo.", tzId);
             return DateTime.UtcNow.Date; // Fallback to UTC if timezone is invalid
         }
     }
