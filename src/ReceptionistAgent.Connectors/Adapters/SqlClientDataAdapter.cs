@@ -80,10 +80,14 @@ public class SqlClientDataAdapter : IClientDataAdapter
 
     public async Task<List<BookingRecord>> GetBookingsByDateAsync(DateTime date)
     {
-        const string sql = "SELECT * FROM Bookings WHERE ScheduledDate = @Date AND Status != 'Cancelled'";
+        const string sql = "SELECT * FROM Bookings WHERE ScheduledDate = @Date AND Status != @CancelledStatus";
 
         using var connection = new SqlConnection(_connectionString);
-        var entities = await connection.QueryAsync<BookingEntity>(sql, new { Date = date.Date });
+        var entities = await connection.QueryAsync<BookingEntity>(sql, new
+        {
+            Date = date.Date,
+            CancelledStatus = BookingStatus.Cancelled.ToString()
+        });
 
         return entities.Select(MapToRecord).ToList();
     }
@@ -150,14 +154,15 @@ public class SqlClientDataAdapter : IClientDataAdapter
             WHERE ProviderId = @ProviderId 
               AND ScheduledDate = @Date 
               AND ScheduledTime = @Time 
-              AND Status != 'Cancelled'";
+              AND Status != @CancelledStatus";
 
         using var connection = new SqlConnection(_connectionString);
         var count = await connection.ExecuteScalarAsync<int>(sql, new
         {
             ProviderId = providerId,
             Date = date.Date,
-            Time = time
+            Time = time,
+            CancelledStatus = BookingStatus.Cancelled.ToString()
         });
 
         return count > 0;
@@ -165,10 +170,14 @@ public class SqlClientDataAdapter : IClientDataAdapter
 
     public async Task<BookingRecord?> GetBookingByClientIdAsync(string clientId)
     {
-        const string sql = "SELECT * FROM Bookings WHERE JSON_VALUE(CustomFieldsJson, '$.clientId') = @ClientId AND Status != 'Cancelled' ORDER BY ScheduledDate DESC";
+        const string sql = "SELECT * FROM Bookings WHERE JSON_VALUE(CustomFieldsJson, '$.clientId') = @ClientId AND Status != @CancelledStatus ORDER BY ScheduledDate DESC";
 
         using var connection = new SqlConnection(_connectionString);
-        var entity = await connection.QueryFirstOrDefaultAsync<BookingEntity>(sql, new { ClientId = clientId });
+        var entity = await connection.QueryFirstOrDefaultAsync<BookingEntity>(sql, new
+        {
+            ClientId = clientId,
+            CancelledStatus = BookingStatus.Cancelled.ToString()
+        });
 
         return entity == null ? null : MapToRecord(entity);
     }
