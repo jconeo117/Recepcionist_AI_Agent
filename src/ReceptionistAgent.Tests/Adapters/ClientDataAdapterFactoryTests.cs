@@ -1,3 +1,4 @@
+using ReceptionistAgent.Connectors.Adapters;
 using ReceptionistAgent.Core.Adapters;
 using ReceptionistAgent.Core.Models;
 using Xunit;

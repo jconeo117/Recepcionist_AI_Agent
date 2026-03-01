@@ -1,5 +1,6 @@
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Security;
+using ReceptionistAgent.Connectors.Security;
 using Xunit;
 
 namespace ReceptionistAgent.Tests.Security;
