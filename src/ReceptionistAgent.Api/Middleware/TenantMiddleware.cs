@@ -1,4 +1,5 @@
 using ReceptionistAgent.Core.Models;
+using ReceptionistAgent.Core.Services;
 using ReceptionistAgent.Core.Tenant;
 using Microsoft.AspNetCore.Http;
 
@@ -20,9 +21,10 @@ public class TenantMiddleware
 
     public async Task InvokeAsync(HttpContext context, ITenantResolver tenantResolver, TenantContext tenantContext)
     {
-        // Permitir Swagger y health checks sin tenant
+        // Permitir Swagger, health checks, audit y admin sin tenant
         var path = context.Request.Path.Value?.ToLower() ?? "";
-        if (path.StartsWith("/swagger") || path.StartsWith("/health") || path.StartsWith("/api/audit"))
+        if (path.StartsWith("/swagger") || path.StartsWith("/health")
+            || path.StartsWith("/api/audit") || path.StartsWith("/api/admin"))
         {
             await _next(context);
             return;
@@ -59,6 +61,17 @@ public class TenantMiddleware
             var allTenants = await tenantResolver.GetAllTenantIdsAsync();
             await context.Response.WriteAsync(
                 $"{{\"error\":\"Tenant '{tenantId}' no encontrado.\",\"available\":[{string.Join(",", allTenants.Select(t => $"\"{t}\""))}]}}");
+            return;
+        }
+
+        // Verificar acceso por facturación (activo y no expirado)
+        var billingService = context.RequestServices.GetService<IBillingService>();
+        if (billingService != null && !await billingService.IsTenantAllowedAsync(tenantId!))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(
+                "{\"error\":\"Acceso suspendido o expirado. Contacte al administrador para reactivar su cuenta.\"}");
             return;
         }
 

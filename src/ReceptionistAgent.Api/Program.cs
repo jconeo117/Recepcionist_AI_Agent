@@ -7,6 +7,8 @@ using ReceptionistAgent.Core.Adapters;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Connectors.Repositories;
 using ReceptionistAgent.Connectors.Security;
+using ReceptionistAgent.Connectors.Services;
+using ReceptionistAgent.Connectors.Messaging;
 using ReceptionistAgent.Api.Security;
 using ReceptionistAgent.Core.Security;
 using ReceptionistAgent.Core.Services;
@@ -44,7 +46,7 @@ builder.Services.AddRateLimiter(options =>
 
 
 // --- Tenant Configuration ---
-var tenantsConfig = new Dictionary<string, TenantConfiguration>();
+var tenantsConfig = new Dictionary<string, TenantConfiguration>(StringComparer.OrdinalIgnoreCase);
 var tenantsSection = builder.Configuration.GetSection("Tenants");
 
 foreach (var tenantSection in tenantsSection.GetChildren())
@@ -54,6 +56,9 @@ foreach (var tenantSection in tenantsSection.GetChildren())
         TenantId = tenantSection.Key,
         BusinessName = tenantSection["BusinessName"] ?? "",
         BusinessType = tenantSection["BusinessType"] ?? "",
+        DbType = tenantSection["DbType"] ?? "InMemory",
+        ConnectionString = tenantSection["ConnectionString"] ?? "",
+        TimeZoneId = tenantSection["TimeZoneId"] ?? "UTC",
         Address = tenantSection["Address"] ?? "",
         Phone = tenantSection["Phone"] ?? "",
         WorkingHours = tenantSection["WorkingHours"] ?? "",
@@ -85,12 +90,39 @@ foreach (var tenantSection in tenantsSection.GetChildren())
 builder.Services.AddSingleton<ITenantResolver>(new InMemoryTenantResolver(tenantsConfig));
 builder.Services.AddSingleton<ClientDataAdapterFactory>();
 builder.Services.AddSingleton<IPromptBuilder, PromptBuilder>();
-builder.Services.AddSingleton<IChatSessionRepository, InMemoryChatSessionRepository>();
+//
+var coreConnStr = builder.Configuration.GetConnectionString("AgentCore")!;
+builder.Services.AddSingleton<IChatSessionRepository>(
+    _ => new SqlChatSessionRepository(coreConnStr));
 
 // --- Security & Audit Services ---
 builder.Services.AddSingleton<IInputGuard, PromptInjectionGuard>();
 builder.Services.AddSingleton<IOutputFilter, SensitiveDataFilter>();
-builder.Services.AddSingleton<IAuditLogger, InMemoryAuditLogger>();
+//
+builder.Services.AddSingleton<IAuditLogger>(
+    _ => new SqlAuditLogger(coreConnStr));
+
+// --- Billing, Reminders & Metrics ---
+builder.Services.AddSingleton<IBillingService>(
+    _ => new SqlBillingService(coreConnStr));
+builder.Services.AddSingleton<IReminderService>(
+    _ => new SqlReminderService(coreConnStr));
+builder.Services.AddSingleton<SqlMetricsRepository>(
+    _ => new SqlMetricsRepository(coreConnStr));
+builder.Services.AddSingleton<IMessageSender>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logger = sp.GetRequiredService<ILogger<TwilioMessageSender>>();
+    return new TwilioMessageSender(
+        config["Twilio:AccountSid"] ?? "",
+        config["Twilio:AuthToken"] ?? "",
+        config["Twilio:FromNumber"] ?? "",
+        logger);
+});
+
+// Background service for sending reminders
+builder.Services.AddHostedService<ReminderBackgroundService>();
+
 builder.Services.AddTransient<ApiKeyAuthFilter>();
 
 // Scoped: resuelto por request via middleware
@@ -143,7 +175,8 @@ builder.Services.AddScoped<Kernel>(sp =>
     var tenantContext = sp.GetRequiredService<TenantContext>();
     var sessionContext = sp.GetRequiredService<ISessionContext>();
     var logger = sp.GetRequiredService<ILogger<BookingPlugin>>();
-    kernel.Plugins.AddFromObject(new BookingPlugin(bookingService, sessionContext, tenantContext, logger), "BookingPlugin");
+    var reminderService = sp.GetService<IReminderService>();
+    kernel.Plugins.AddFromObject(new BookingPlugin(bookingService, sessionContext, tenantContext, logger, reminderService), "BookingPlugin");
     kernel.Plugins.AddFromObject(new BusinessInfoPlugin(adapter, tenantContext), "BusinessInfoPlugin");
 
     return kernel;
@@ -158,7 +191,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// Solo redirigir a HTTPS en producción (ngrok y desarrollo usan HTTP)
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 // Tenant resolution middleware (antes de controllers)
 app.UseMiddleware<TenantMiddleware>();
