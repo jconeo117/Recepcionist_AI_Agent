@@ -31,6 +31,11 @@ public class TenantConfiguration
     public Dictionary<string, string> Pricing { get; set; } = new();
     public List<TenantProviderConfig> Providers { get; set; } = [];
     public Dictionary<string, object> CustomSettings { get; set; } = new();
+
+    // Persistence fields
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
 }
 
 /// <summary>

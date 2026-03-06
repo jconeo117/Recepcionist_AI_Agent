@@ -11,4 +11,10 @@ public interface ITenantResolver
 {
     Task<TenantConfiguration?> ResolveAsync(string tenantId);
     Task<List<string>> GetAllTenantIdsAsync();
+
+    // CRUD — supported by SqlTenantRepository
+    Task<TenantConfiguration> CreateAsync(TenantConfiguration tenant);
+    Task<TenantConfiguration> UpdateAsync(TenantConfiguration tenant);
+    Task<bool> DeleteAsync(string tenantId);
+    Task<List<TenantConfiguration>> GetAllTenantsAsync();
 }

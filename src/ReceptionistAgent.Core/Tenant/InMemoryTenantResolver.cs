@@ -15,7 +15,9 @@ public class InMemoryTenantResolver : ITenantResolver
 
     public InMemoryTenantResolver(Dictionary<string, TenantConfiguration> tenants)
     {
-        _tenants = tenants ?? throw new ArgumentNullException(nameof(tenants));
+        ArgumentNullException.ThrowIfNull(tenants);
+        // Ensure case-insensitive lookups regardless of input dictionary's comparer
+        _tenants = new Dictionary<string, TenantConfiguration>(tenants, StringComparer.OrdinalIgnoreCase);
     }
 
     public Task<TenantConfiguration?> ResolveAsync(string tenantId)
@@ -23,18 +25,29 @@ public class InMemoryTenantResolver : ITenantResolver
         if (string.IsNullOrWhiteSpace(tenantId))
             return Task.FromResult<TenantConfiguration?>(null);
 
-        // Búsqueda case-insensitive para mayor flexibilidad
-        var key = _tenants.Keys.FirstOrDefault(k =>
-            k.Equals(tenantId, StringComparison.OrdinalIgnoreCase));
-
-        if (key == null)
-            return Task.FromResult<TenantConfiguration?>(null);
-
-        return Task.FromResult<TenantConfiguration?>(_tenants[key]);
+        // Dictionary was created with StringComparer.OrdinalIgnoreCase, so lookup is O(1)
+        return _tenants.TryGetValue(tenantId, out var tenant)
+            ? Task.FromResult<TenantConfiguration?>(tenant)
+            : Task.FromResult<TenantConfiguration?>(null);
     }
 
     public Task<List<string>> GetAllTenantIdsAsync()
     {
         return Task.FromResult(_tenants.Keys.ToList());
+    }
+
+    // CRUD — not supported in-memory (use SqlTenantRepository for production)
+    public Task<TenantConfiguration> CreateAsync(TenantConfiguration tenant)
+        => throw new NotSupportedException("InMemoryTenantResolver does not support CRUD. Use SqlTenantRepository.");
+
+    public Task<TenantConfiguration> UpdateAsync(TenantConfiguration tenant)
+        => throw new NotSupportedException("InMemoryTenantResolver does not support CRUD. Use SqlTenantRepository.");
+
+    public Task<bool> DeleteAsync(string tenantId)
+        => throw new NotSupportedException("InMemoryTenantResolver does not support CRUD. Use SqlTenantRepository.");
+
+    public Task<List<TenantConfiguration>> GetAllTenantsAsync()
+    {
+        return Task.FromResult(_tenants.Values.ToList());
     }
 }

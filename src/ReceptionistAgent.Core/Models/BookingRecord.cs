@@ -35,5 +35,6 @@ public enum BookingStatus
     Confirmed = 1,    // Confirmada
     Cancelled = 2,    // Cancelada
     Completed = 3,    // Completada
-    NoShow = 4        // No se presentó
+    NoShow = 4,       // No se presentó
+    EscalatedToHuman = 5  // Escalada a personal humano (futuro)
 }
