@@ -89,3 +89,13 @@ secrets.json
 
 # Semantic Kernel specifics (if any, though usually Secrets are key)
 *.secret.json
+
+# Environment variables (API keys, secrets)
+.env
+.env.*
+!.env.example
+
+# Node.js / Admin Panel
+node_modules/
+dist/
+api_log.txt 
