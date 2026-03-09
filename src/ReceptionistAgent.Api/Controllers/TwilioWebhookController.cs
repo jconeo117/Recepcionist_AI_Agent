@@ -51,8 +51,8 @@ public class TwilioWebhookController : TwilioController
             return TwiMLMessage("Mensaje inválido.");
         }
 
-        // Mapeo determinístico: Teléfono -> Guid de SessionId
-        var sessionId = GenerateSessionIdFromPhone(phone);
+        // Mapeo determinístico: Teléfono + Tenant -> Guid de SessionId
+        var sessionId = GenerateSessionId(tenantId, phone);
 
         // ═══ Ejecutar pipeline mediante el orquestador ═══
         var result = await _orchestrator.ProcessMessageAsync(
@@ -74,14 +74,13 @@ public class TwilioWebhookController : TwilioController
     }
 
     /// <summary>
-    /// Convierte un número de teléfono de forma determinística en un Guid.
-    /// Así el mismo número de teléfono siempre genera el mismo SessionId
-    /// para mantener el historial de chat con el usuario.
+    /// Convierte la combinación de TenantId y teléfono de forma determinística en un Guid.
+    /// Así el mismo número de teléfono tiene un SessionId aislado por cada Tenant.
     /// </summary>
-    private static Guid GenerateSessionIdFromPhone(string phone)
+    private static Guid GenerateSessionId(string tenantId, string phone)
     {
         using var md5 = MD5.Create();
-        var hash = md5.ComputeHash(Encoding.UTF8.GetBytes("WhatsAppSessionSalt_" + phone));
+        var hash = md5.ComputeHash(Encoding.UTF8.GetBytes($"WhatsAppSessionSalt_{tenantId}_{phone}"));
         return new Guid(hash);
     }
 }

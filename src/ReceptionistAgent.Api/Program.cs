@@ -23,6 +23,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
+
+// --- CORS for Admin Panel ---
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AdminPanel", policy =>
+    {
+        policy.WithOrigins(
+                "http://localhost:5173",  // Vite dev server
+                "http://localhost:4173",  // Vite preview
+                "http://127.0.0.1:5173")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -44,54 +58,59 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
+var coreConnStr = builder.Configuration
+    .GetConnectionString("AgentCore")!;
+
+builder.Services.AddSingleton<ITenantResolver>(
+    _ => new SqlTenantRepository(coreConnStr));
 
 // --- Tenant Configuration ---
-var tenantsConfig = new Dictionary<string, TenantConfiguration>(StringComparer.OrdinalIgnoreCase);
-var tenantsSection = builder.Configuration.GetSection("Tenants");
+// var tenantsConfig = new Dictionary<string, TenantConfiguration>(StringComparer.OrdinalIgnoreCase);
+// var tenantsSection = builder.Configuration.GetSection("Tenants");
 
-foreach (var tenantSection in tenantsSection.GetChildren())
-{
-    var tenant = new TenantConfiguration
-    {
-        TenantId = tenantSection.Key,
-        BusinessName = tenantSection["BusinessName"] ?? "",
-        BusinessType = tenantSection["BusinessType"] ?? "",
-        DbType = tenantSection["DbType"] ?? "InMemory",
-        ConnectionString = tenantSection["ConnectionString"] ?? "",
-        TimeZoneId = tenantSection["TimeZoneId"] ?? "UTC",
-        Address = tenantSection["Address"] ?? "",
-        Phone = tenantSection["Phone"] ?? "",
-        WorkingHours = tenantSection["WorkingHours"] ?? "",
-        Services = tenantSection.GetSection("Services").Get<List<string>>() ?? [],
-        AcceptedInsurance = tenantSection.GetSection("AcceptedInsurance").Get<List<string>>() ?? [],
-        Pricing = tenantSection.GetSection("Pricing").Get<Dictionary<string, string>>() ?? new()
-    };
+// foreach (var tenantSection in tenantsSection.GetChildren())
+// {
+//     var tenant = new TenantConfiguration
+//     {
+//         TenantId = tenantSection.Key,
+//         BusinessName = tenantSection["BusinessName"] ?? "",
+//         BusinessType = tenantSection["BusinessType"] ?? "",
+//         DbType = tenantSection["DbType"] ?? "InMemory",
+//         ConnectionString = tenantSection["ConnectionString"] ?? "",
+//         TimeZoneId = tenantSection["TimeZoneId"] ?? "UTC",
+//         Address = tenantSection["Address"] ?? "",
+//         Phone = tenantSection["Phone"] ?? "",
+//         WorkingHours = tenantSection["WorkingHours"] ?? "",
+//         Services = tenantSection.GetSection("Services").Get<List<string>>() ?? [],
+//         AcceptedInsurance = tenantSection.GetSection("AcceptedInsurance").Get<List<string>>() ?? [],
+//         Pricing = tenantSection.GetSection("Pricing").Get<Dictionary<string, string>>() ?? new()
+//     };
 
-    // Cargar providers del tenant
-    var providersSection = tenantSection.GetSection("Providers");
-    foreach (var provSection in providersSection.GetChildren())
-    {
-        tenant.Providers.Add(new TenantProviderConfig
-        {
-            Id = provSection["Id"] ?? "",
-            Name = provSection["Name"] ?? "",
-            Role = provSection["Role"] ?? "",
-            WorkingDays = provSection.GetSection("WorkingDays").Get<List<string>>() ?? [],
-            StartTime = provSection["StartTime"] ?? "09:00",
-            EndTime = provSection["EndTime"] ?? "18:00",
-            SlotDurationMinutes = int.TryParse(provSection["SlotDurationMinutes"], out var dur) ? dur : 30
-        });
-    }
+//     // Cargar providers del tenant
+//     var providersSection = tenantSection.GetSection("Providers");
+//     foreach (var provSection in providersSection.GetChildren())
+//     {
+//         tenant.Providers.Add(new TenantProviderConfig
+//         {
+//             Id = provSection["Id"] ?? "",
+//             Name = provSection["Name"] ?? "",
+//             Role = provSection["Role"] ?? "",
+//             WorkingDays = provSection.GetSection("WorkingDays").Get<List<string>>() ?? [],
+//             StartTime = provSection["StartTime"] ?? "09:00",
+//             EndTime = provSection["EndTime"] ?? "18:00",
+//             SlotDurationMinutes = int.TryParse(provSection["SlotDurationMinutes"], out var dur) ? dur : 30
+//         });
+//     }
 
-    tenantsConfig[tenant.TenantId] = tenant;
-}
+//     tenantsConfig[tenant.TenantId] = tenant;
+// }
 
 // --- Application Core Services ---
-builder.Services.AddSingleton<ITenantResolver>(new InMemoryTenantResolver(tenantsConfig));
+//builder.Services.AddSingleton<ITenantResolver>(new InMemoryTenantResolver(tenantsConfig));
 builder.Services.AddSingleton<ClientDataAdapterFactory>();
 builder.Services.AddSingleton<IPromptBuilder, PromptBuilder>();
 //
-var coreConnStr = builder.Configuration.GetConnectionString("AgentCore")!;
+//var coreConnStr = builder.Configuration.GetConnectionString("AgentCore")!;
 builder.Services.AddSingleton<IChatSessionRepository>(
     _ => new SqlChatSessionRepository(coreConnStr));
 
@@ -196,6 +215,9 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+// CORS for Admin Panel (antes de middlewares)
+app.UseCors("AdminPanel");
 
 // Tenant resolution middleware (antes de controllers)
 app.UseMiddleware<TenantMiddleware>();
