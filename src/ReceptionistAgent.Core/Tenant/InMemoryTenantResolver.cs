@@ -36,6 +36,14 @@ public class InMemoryTenantResolver : ITenantResolver
         return Task.FromResult(_tenants.Keys.ToList());
     }
 
+    public Task<TenantConfiguration?> AuthenticateAsync(string username, string password)
+    {
+        var tenant = _tenants.Values.FirstOrDefault(t =>
+            string.Equals(t.Username, username, StringComparison.OrdinalIgnoreCase) &&
+            t.PasswordHash == password);
+        return Task.FromResult(tenant);
+    }
+
     // CRUD — not supported in-memory (use SqlTenantRepository for production)
     public Task<TenantConfiguration> CreateAsync(TenantConfiguration tenant)
         => throw new NotSupportedException("InMemoryTenantResolver does not support CRUD. Use SqlTenantRepository.");

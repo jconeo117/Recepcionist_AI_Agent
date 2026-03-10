@@ -12,6 +12,11 @@ public interface ISessionContext
     string? ValidatedClientId { get; }
 
     /// <summary>
+    /// ID de la sesión de chat actual.
+    /// </summary>
+    Guid SessionId { get; set; }
+
+    /// <summary>
     /// Códigos de confirmación que han sido validados en esta sesión.
     /// </summary>
     HashSet<string> ValidatedConfirmationCodes { get; }

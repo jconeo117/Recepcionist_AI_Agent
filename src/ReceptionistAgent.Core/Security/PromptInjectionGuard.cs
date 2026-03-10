@@ -53,16 +53,21 @@ public class PromptInjectionGuard : IInputGuard
          "Intento de activar modo especial"),
         (new Regex(@"(simula|sim[uú]la|hypothetically|hipot[eé]ticamente|imagina\s+que)", RegexOptions.IgnoreCase | RegexOptions.Compiled),
          "Intento de evasión hipotética"),
+        (new Regex(@"(cuenta\s+(desde|hasta)|cu[eé]ntame\s+un\s+chiste|escribe\s+un\s+poema|resuelve\s+esto|traduce)", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+         "Patrón de off-topic o trolling detectado"),
     ];
 
     // Respuesta genérica que mantiene al agente en su rol
     private const string GenericRejection =
-        "Solo puedo ayudarle con la gestión de citas y consultas sobre nuestros servicios. ¿Desea agendar una cita o tiene alguna consulta?";
+        "Solo puedo ayudarle con la gestión de citas y consultas sobre nuestros servicios. ¿Desea agendar una cita o tiene alguna consulta administrativa?";
 
     public Task<GuardResult> AnalyzeAsync(string userMessage)
     {
         if (string.IsNullOrWhiteSpace(userMessage))
             return Task.FromResult(new GuardResult(true, null, ThreatLevel.None));
+
+        if (userMessage.Length > 800)
+            return Task.FromResult(new GuardResult(false, "El mensaje es demasiado largo. Por favor, sea más breve.", ThreatLevel.High));
 
         var normalized = userMessage.Trim();
 

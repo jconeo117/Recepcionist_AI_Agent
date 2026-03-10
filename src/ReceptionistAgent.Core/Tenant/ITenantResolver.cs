@@ -12,6 +12,9 @@ public interface ITenantResolver
     Task<TenantConfiguration?> ResolveAsync(string tenantId);
     Task<List<string>> GetAllTenantIdsAsync();
 
+    // Auth for Client Dashboard
+    Task<TenantConfiguration?> AuthenticateAsync(string username, string password);
+
     // CRUD — supported by SqlTenantRepository
     Task<TenantConfiguration> CreateAsync(TenantConfiguration tenant);
     Task<TenantConfiguration> UpdateAsync(TenantConfiguration tenant);

@@ -10,6 +10,7 @@ public class SessionContext : ISessionContext
     private readonly HashSet<string> _validatedConfirmationCodes = new(StringComparer.OrdinalIgnoreCase);
 
     public string? ValidatedClientId { get; private set; }
+    public Guid SessionId { get; set; }
 
     public HashSet<string> ValidatedConfirmationCodes => _validatedConfirmationCodes;
 

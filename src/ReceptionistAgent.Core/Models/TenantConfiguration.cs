@@ -14,6 +14,10 @@ public class TenantConfiguration
     [JsonPropertyName("businessName")]
     public string BusinessName { get; set; } = string.Empty;
 
+    // Credentials for Client Dashboard
+    public string? Username { get; set; }
+    public string? PasswordHash { get; set; }
+
     [JsonPropertyName("timezoneId")]
     public string TimeZoneId { get; set; } = "UTC"; // ID de zona horaria (ej: "SA Pacific Standard Time" o "America/Bogota" dependiedo del OS)
 
@@ -22,6 +26,13 @@ public class TenantConfiguration
 
     [JsonPropertyName("connectionString")]
     public string ConnectionString { get; set; } = string.Empty;
+
+    // Omnichannel Messaging Strategy
+    public string MessageProvider { get; set; } = "Twilio"; // "Twilio" or "Meta"
+    public string MessageProviderAccount { get; set; } = string.Empty; // Account SID for Twilio, PhoneNumberId for Meta
+    public string MessageProviderToken { get; set; } = string.Empty;   // AuthToken for Twilio, AccessToken for Meta
+    public string MessageProviderPhone { get; set; } = string.Empty;   // From number
+
     public string BusinessType { get; set; } = string.Empty;  // "clinic", "salon", "workshop"
     public string Address { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
