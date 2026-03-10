@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using ReceptionistAgent.Core.Services;
-using Twilio;
+using Twilio.Clients;
 using Twilio.Rest.Api.V2010.Account;
 using Twilio.Types;
 
@@ -8,19 +8,19 @@ namespace ReceptionistAgent.Connectors.Messaging;
 
 /// <summary>
 /// Envía mensajes outbound por Twilio API (WhatsApp).
-/// Usado para recordatorios automáticos de citas.
+/// Actualizado para soportar multi-tenant de forma aislada.
 /// </summary>
 public class TwilioMessageSender : IMessageSender
 {
-    private readonly ILogger<TwilioMessageSender> _logger;
+    private readonly ILogger _logger;
     private readonly string _fromNumber;
+    private readonly TwilioRestClient _twilioClient;
 
-    public TwilioMessageSender(string accountSid, string authToken, string fromNumber, ILogger<TwilioMessageSender> logger)
+    public TwilioMessageSender(string accountSid, string authToken, string fromNumber, ILogger logger)
     {
         _logger = logger;
         _fromNumber = fromNumber;
-
-        TwilioClient.Init(accountSid, authToken);
+        _twilioClient = new TwilioRestClient(accountSid, authToken);
     }
 
     public async Task<bool> SendAsync(string to, string message)
@@ -30,14 +30,16 @@ public class TwilioMessageSender : IMessageSender
             var messageResource = await MessageResource.CreateAsync(
                 body: message,
                 from: new PhoneNumber(_fromNumber),
-                to: new PhoneNumber($"whatsapp:{to}")
+                to: new PhoneNumber(to.StartsWith("whatsapp:") ? to : $"whatsapp:{to}"),
+                client: _twilioClient
             );
 
             _logger.LogInformation(
                 "Twilio message sent: SID={Sid}, To={To}, Status={Status}",
                 messageResource.Sid, to, messageResource.Status);
 
-            return messageResource.Status != MessageResource.StatusEnum.Failed;
+            return messageResource.Status != MessageResource.StatusEnum.Failed &&
+                   messageResource.Status != MessageResource.StatusEnum.Undelivered;
         }
         catch (Exception ex)
         {

@@ -47,6 +47,24 @@ public class SqlTenantRepository : ITenantResolver
         return ids.ToList();
     }
 
+    public async Task<TenantConfiguration?> AuthenticateAsync(string username, string password)
+    {
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return null;
+
+        const string tenantSql = "SELECT * FROM Tenants WHERE Username = @Username AND PasswordHash = @PasswordHash AND IsActive = 1";
+        const string providersSql = "SELECT * FROM TenantProviders WHERE TenantId = @TenantId AND IsActive = 1";
+
+        using var connection = new SqlConnection(_connectionString);
+        var entity = await connection.QuerySingleOrDefaultAsync<TenantEntity>(tenantSql, new { Username = username, PasswordHash = password });
+
+        if (entity == null)
+            return null;
+
+        var providerEntities = (await connection.QueryAsync<ProviderEntity>(providersSql, new { TenantId = entity.TenantId })).ToList();
+
+        return MapToConfiguration(entity, providerEntities);
+    }
+
     public async Task<List<TenantConfiguration>> GetAllTenantsAsync()
     {
         const string tenantSql = "SELECT * FROM Tenants WHERE IsActive = 1";
@@ -68,10 +86,10 @@ public class SqlTenantRepository : ITenantResolver
         const string sql = @"
             INSERT INTO Tenants (TenantId, BusinessName, BusinessType, DbType, ConnectionString,
                 TimeZoneId, Address, Phone, WorkingHours, Services, AcceptedInsurance,
-                Pricing, CustomSettings, IsActive, CreatedAt)
+                Pricing, CustomSettings, Username, PasswordHash, IsActive, CreatedAt)
             VALUES (@TenantId, @BusinessName, @BusinessType, @DbType, @ConnectionString,
                 @TimeZoneId, @Address, @Phone, @WorkingHours, @Services, @AcceptedInsurance,
-                @Pricing, @CustomSettings, @IsActive, @CreatedAt)";
+                @Pricing, @CustomSettings, @Username, @PasswordHash, @IsActive, @CreatedAt)";
 
         using var connection = new SqlConnection(_connectionString);
         await connection.ExecuteAsync(sql, new
@@ -89,6 +107,8 @@ public class SqlTenantRepository : ITenantResolver
             AcceptedInsurance = JsonSerializer.Serialize(tenant.AcceptedInsurance),
             Pricing = JsonSerializer.Serialize(tenant.Pricing),
             CustomSettings = JsonSerializer.Serialize(tenant.CustomSettings),
+            Username = tenant.Username,
+            PasswordHash = tenant.PasswordHash,
             tenant.IsActive,
             tenant.CreatedAt
         });
@@ -111,8 +131,8 @@ public class SqlTenantRepository : ITenantResolver
                 TimeZoneId = @TimeZoneId, Address = @Address, Phone = @Phone,
                 WorkingHours = @WorkingHours, Services = @Services,
                 AcceptedInsurance = @AcceptedInsurance, Pricing = @Pricing,
-                CustomSettings = @CustomSettings, IsActive = @IsActive,
-                UpdatedAt = @UpdatedAt
+                CustomSettings = @CustomSettings, Username = @Username, PasswordHash = @PasswordHash,
+                IsActive = @IsActive, UpdatedAt = @UpdatedAt
             WHERE TenantId = @TenantId";
 
         using var connection = new SqlConnection(_connectionString);
@@ -131,6 +151,8 @@ public class SqlTenantRepository : ITenantResolver
             AcceptedInsurance = JsonSerializer.Serialize(tenant.AcceptedInsurance),
             Pricing = JsonSerializer.Serialize(tenant.Pricing),
             CustomSettings = JsonSerializer.Serialize(tenant.CustomSettings),
+            Username = tenant.Username,
+            PasswordHash = tenant.PasswordHash,
             tenant.IsActive,
             UpdatedAt = DateTime.UtcNow
         });
@@ -195,6 +217,8 @@ public class SqlTenantRepository : ITenantResolver
             AcceptedInsurance = DeserializeJson<List<string>>(entity.AcceptedInsurance) ?? [],
             Pricing = DeserializeJson<Dictionary<string, string>>(entity.Pricing) ?? new(),
             CustomSettings = DeserializeJson<Dictionary<string, object>>(entity.CustomSettings) ?? new(),
+            Username = entity.Username,
+            PasswordHash = entity.PasswordHash,
             IsActive = entity.IsActive,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
@@ -235,6 +259,8 @@ public class SqlTenantRepository : ITenantResolver
         public string? AcceptedInsurance { get; set; }
         public string? Pricing { get; set; }
         public string? CustomSettings { get; set; }
+        public string? Username { get; set; }
+        public string? PasswordHash { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

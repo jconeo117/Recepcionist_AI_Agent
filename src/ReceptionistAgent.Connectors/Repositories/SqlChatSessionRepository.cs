@@ -16,7 +16,7 @@ public class SqlChatSessionRepository : IChatSessionRepository
         _connectionString = connectionString;
     }
 
-    public async Task<ChatHistory> GetChatHistoryAsync(Guid sessionId, string tenantId, string systemPrompt)
+    public async Task<ChatHistory> GetChatHistoryAsync(Guid sessionId, string tenantId, string systemPrompt, string? userPhone = null)
     {
         const string sql = "SELECT HistoryJson FROM ChatSessions WHERE Id = @Id AND TenantId = @TenantId";
 
@@ -27,7 +27,7 @@ public class SqlChatSessionRepository : IChatSessionRepository
         {
             // If doesn't exist, start a new history with the system prompt
             var newHistory = new ChatHistory(systemPrompt);
-            await InsertChatHistoryAsync(sessionId, tenantId, newHistory);
+            await InsertChatHistoryAsync(sessionId, tenantId, newHistory, userPhone);
             return newHistory;
         }
 
@@ -95,25 +95,58 @@ public class SqlChatSessionRepository : IChatSessionRepository
         // If it didn't update anything, it means it doesn't exist anymore, let's insert it
         if (rows == 0)
         {
-            await InsertChatHistoryAsync(sessionId, tenantId, history);
+            await InsertChatHistoryAsync(sessionId, tenantId, history, null);
         }
     }
 
-    private async Task InsertChatHistoryAsync(Guid sessionId, string tenantId, ChatHistory history)
+    private async Task InsertChatHistoryAsync(Guid sessionId, string tenantId, ChatHistory history, string? userPhone)
     {
         var json = JsonSerializer.Serialize(history.ToList());
         const string sql = @"
-            INSERT INTO ChatSessions (Id, TenantId, HistoryJson, CreatedAt, UpdatedAt)
-            VALUES (@Id, @TenantId, @HistoryJson, @CreatedAt, @UpdatedAt)";
+            INSERT INTO ChatSessions (Id, TenantId, UserPhone, HistoryJson, NeedsHumanAttention, CreatedAt, UpdatedAt)
+            VALUES (@Id, @TenantId, @UserPhone, @HistoryJson, 0, @CreatedAt, @UpdatedAt)";
 
         using var connection = new SqlConnection(_connectionString);
         await connection.ExecuteAsync(sql, new
         {
             Id = sessionId,
             TenantId = tenantId,
+            UserPhone = userPhone ?? string.Empty,
             HistoryJson = json,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
+    }
+
+    public async Task SetNeedsHumanAttentionAsync(Guid sessionId, string tenantId, bool needsAttention)
+    {
+        const string sql = @"
+            UPDATE ChatSessions 
+            SET NeedsHumanAttention = @NeedsAttention, UpdatedAt = @UpdatedAt 
+            WHERE Id = @Id AND TenantId = @TenantId";
+
+        using var connection = new SqlConnection(_connectionString);
+        await connection.ExecuteAsync(sql, new
+        {
+            NeedsAttention = needsAttention ? 1 : 0,
+            UpdatedAt = DateTime.UtcNow,
+            Id = sessionId,
+            TenantId = tenantId
+        });
+    }
+
+    public async Task<List<ReceptionistAgent.Core.Models.ChatSessionDto>> GetActiveSessionsAsync(string tenantId)
+    {
+        // Get sessions that either need human attention OR have been updated recently (active in the last 24h)
+        const string sql = @"
+            SELECT Id, TenantId, UserPhone, NeedsHumanAttention, CreatedAt, UpdatedAt 
+            FROM ChatSessions 
+            WHERE TenantId = @TenantId 
+              AND (NeedsHumanAttention = 1 OR UpdatedAt >= DATEADD(day, -1, GETUTCDATE()))
+            ORDER BY UpdatedAt DESC";
+
+        using var connection = new SqlConnection(_connectionString);
+        var sessions = await connection.QueryAsync<ReceptionistAgent.Core.Models.ChatSessionDto>(sql, new { TenantId = tenantId });
+        return sessions.ToList();
     }
 }
