@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace ReceptionistAgent.Tests.Security;
@@ -11,7 +12,16 @@ public class SecurityIntegrationTests : IClassFixture<WebApplicationFactory<Prog
 
     public SecurityIntegrationTests(WebApplicationFactory<Program> factory)
     {
-        _client = factory.CreateClient();
+        _client = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((context, conf) =>
+            {
+                conf.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    { "Security:ApiKeys:0", "your_super_secret_audit_api_key_1" }
+                });
+            });
+        }).CreateClient();
     }
 
     [Fact(Skip = "Requiere instancia local de LM Studio corriendo en el puerto 1234. Quitar Skip para probar.")]

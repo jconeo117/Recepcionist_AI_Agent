@@ -7,7 +7,7 @@ echo ===================================================
 echo.
 
 echo [1/3] Iniciando Backend (.NET API)...
-start "API Backend" cmd /k "cd src\ReceptionistAgent.Api && dotnet run"
+start "API Backend" cmd /k "cd src\ReceptionistAgent.Api && dotnet watch"
 
 echo.
 echo [2/3] Iniciando Admin Panel (Puerto 5173)...
@@ -23,8 +23,8 @@ set /p ngrok_prompt="Desea exponer el backend con ngrok para pruebas de Twilio/M
 
 if /I "%ngrok_prompt%"=="S" (
     echo.
-    echo Iniciando ngrok en el puerto 5000...
-    start "Ngrok Tunnel" cmd /k "ngrok http 5000"
+    echo Iniciando ngrok en el puerto 5083...
+    start "Ngrok Tunnel" cmd /k "ngrok http 5083"
     echo.
     echo [!] IMPORTANTE: Recuerde actualizar el Webhook de Twilio/Meta con la nueva URL.
 ) else (

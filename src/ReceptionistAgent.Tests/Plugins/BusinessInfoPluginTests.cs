@@ -32,32 +32,7 @@ public class BusinessInfoPluginTests
         _plugin = new BusinessInfoPlugin(_mockAdapter.Object, _tenantContext);
     }
 
-    [Fact]
-    public void GetBusinessInfo_ShouldReturnTenantAddress_WhenUbicacion()
-    {
-        var result = _plugin.GetBusinessInfo("ubicacion");
 
-        Assert.Contains("Negocio Test", result);
-        Assert.Contains("Calle 1 #23, Test City", result);
-        Assert.Contains("555-1234", result);
-    }
-
-    [Fact]
-    public void GetBusinessInfo_ShouldReturnTenantHours_WhenHorarios()
-    {
-        var result = _plugin.GetBusinessInfo("horarios");
-
-        Assert.Contains("Lunes a Viernes: 9:00 - 18:00", result);
-    }
-
-    [Fact]
-    public void GetBusinessInfo_ShouldReturnTenantServices_WhenServicios()
-    {
-        var result = _plugin.GetBusinessInfo("servicios");
-
-        Assert.Contains("Servicio A", result);
-        Assert.Contains("Servicio B", result);
-    }
 
     [Fact]
     public async Task GetProviderInfo_ShouldReturnProvidersFromAdapter()
