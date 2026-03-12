@@ -11,5 +11,5 @@ public record FilterResult(string FilteredContent, bool WasModified, List<string
 /// </summary>
 public interface IOutputFilter
 {
-    Task<FilterResult> FilterAsync(string agentResponse, string tenantId, IEnumerable<string>? allowedPhones = null);
+    Task<FilterResult> FilterAsync(string agentResponse, string tenantId, IEnumerable<string>? allowedPhones = null, IEnumerable<string>? whitelistedTexts = null);
 }

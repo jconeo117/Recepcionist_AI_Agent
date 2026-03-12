@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using ReceptionistAgent.Core.Models;
+using ReceptionistAgent.Core.Utils;
 
 namespace ReceptionistAgent.Core.Adapters;
 
@@ -110,13 +111,13 @@ public class InMemoryClientAdapter : IClientDataAdapter
         if (string.IsNullOrWhiteSpace(query))
             return Task.FromResult(new List<ServiceProvider>());
 
-        var normalizedQuery = RemoveDiacritics(query.Trim());
+        var normalizedQuery = TextHelper.RemoveAccents(query.Trim());
         var queryTokens = normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         var results = _providers.Where(p =>
         {
-            var normalizedName = RemoveDiacritics(p.Name);
-            var normalizedRole = RemoveDiacritics(p.Role);
+            var normalizedName = TextHelper.RemoveAccents(p.Name);
+            var normalizedRole = TextHelper.RemoveAccents(p.Role);
 
             return queryTokens.All(token =>
                 normalizedName.Contains(token, StringComparison.OrdinalIgnoreCase) ||
@@ -125,24 +126,5 @@ public class InMemoryClientAdapter : IClientDataAdapter
         }).ToList();
 
         return Task.FromResult(results);
-    }
-
-    // === Helpers ===
-
-    private static string RemoveDiacritics(string text)
-    {
-        var normalizedString = text.Normalize(NormalizationForm.FormD);
-        var sb = new StringBuilder(capacity: normalizedString.Length);
-
-        foreach (var c in normalizedString)
-        {
-            var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
-            if (unicodeCategory != UnicodeCategory.NonSpacingMark)
-            {
-                sb.Append(c);
-            }
-        }
-
-        return sb.ToString().Normalize(NormalizationForm.FormC);
     }
 }

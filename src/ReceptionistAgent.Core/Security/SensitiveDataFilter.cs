@@ -48,7 +48,7 @@ public class SensitiveDataFilter : IOutputFilter
     private const string SafeRoleResponse =
         "Disculpe, ¿puedo ayudarle con alguna consulta sobre nuestros servicios o desea agendar una cita?";
 
-    public Task<FilterResult> FilterAsync(string agentResponse, string tenantId, IEnumerable<string>? allowedPhones = null)
+    public Task<FilterResult> FilterAsync(string agentResponse, string tenantId, IEnumerable<string>? allowedPhones = null, IEnumerable<string>? whitelistedTexts = null)
     {
         if (string.IsNullOrWhiteSpace(agentResponse))
             return Task.FromResult(new FilterResult(agentResponse, false, []));
@@ -77,23 +77,39 @@ public class SensitiveDataFilter : IOutputFilter
             }
         }
 
-        // 3. Enmascarar PII — preservar teléfonos permitidos (del negocio)
-        var phoneReplacements = new Dictionary<string, string>();
+        // 3. Preparar reemplazos temporales para proteger datos permitidos (Teléfonos del negocio y Whitelist)
+        var temporaryReplacements = new Dictionary<string, string>();
+        int placeholderIdx = 0;
+
+        // --- Proteger teléfonos del negocio ---
         if (allowedPhones != null)
         {
-            int idx = 0;
             foreach (var phone in allowedPhones.Where(p => !string.IsNullOrWhiteSpace(p)))
             {
-                var placeholder = $"__ALLOWED_PHONE_{idx}__";
+                var placeholder = $"__PROTECTED_ENTRY_{placeholderIdx++}__";
                 if (filtered.Contains(phone))
                 {
                     filtered = filtered.Replace(phone, placeholder);
-                    phoneReplacements[placeholder] = phone;
-                    idx++;
+                    temporaryReplacements[placeholder] = phone;
                 }
             }
         }
 
+        // --- Proteger textos de la lista blanca (ej: datos que el usuario acaba de dar) ---
+        if (whitelistedTexts != null)
+        {
+            foreach (var text in whitelistedTexts.Where(t => !string.IsNullOrWhiteSpace(t) && t.Length > 3))
+            {
+                var placeholder = $"__PROTECTED_ENTRY_{placeholderIdx++}__";
+                if (filtered.Contains(text))
+                {
+                    filtered = filtered.Replace(text, placeholder);
+                    temporaryReplacements[placeholder] = text;
+                }
+            }
+        }
+
+        // 4. Enmascarar PII sobre lo que queda
         foreach (var (pattern, replacement, label) in PiiPatterns)
         {
             if (pattern.IsMatch(filtered))
@@ -104,10 +120,10 @@ public class SensitiveDataFilter : IOutputFilter
             }
         }
 
-        // Restaurar teléfonos permitidos
-        foreach (var (placeholder, originalPhone) in phoneReplacements)
+        // 5. Restaurar datos protegidos
+        foreach (var (placeholder, originalValue) in temporaryReplacements)
         {
-            filtered = filtered.Replace(placeholder, originalPhone);
+            filtered = filtered.Replace(placeholder, originalValue);
         }
 
         return Task.FromResult(new FilterResult(filtered, wasModified, redactedItems));
