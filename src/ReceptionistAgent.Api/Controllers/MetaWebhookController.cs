@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using ReceptionistAgent.Api.Services;
-using ReceptionistAgent.Core.Models;
-using ReceptionistAgent.Core.Tenant;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using System.Text.Json;
+using ReceptionistAgent.Api.Services;
+using ReceptionistAgent.Core.Tenant;
+using ReceptionistAgent.Core.Services;
+using ReceptionistAgent.Core.Models;
 
 namespace ReceptionistAgent.Api.Controllers;
 
@@ -11,22 +14,18 @@ namespace ReceptionistAgent.Api.Controllers;
 [Route("api/webhook/meta")]
 public class MetaWebhookController : ControllerBase
 {
-    private readonly ChatOrchestrator _orchestrator;
-    private readonly ITenantResolver _tenantResolver;
     private readonly ILogger<MetaWebhookController> _logger;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly string _verifyToken;
 
     public MetaWebhookController(
-        ChatOrchestrator orchestrator,
-        ITenantResolver tenantResolver,
         ILogger<MetaWebhookController> logger,
-        IConfiguration config)
+        IConfiguration config,
+        IServiceScopeFactory scopeFactory)
     {
-        _orchestrator = orchestrator;
-        _tenantResolver = tenantResolver;
         _logger = logger;
-        // The verify token you configure in the Meta App Dashboard
-        _verifyToken = config["Meta:VerifyToken"] ?? "my_secure_verify_token_123";
+        _scopeFactory = scopeFactory;
+        _verifyToken = config["Meta:VerifyToken"] ?? "agente_secreto_2026";
     }
 
     /// <summary>
@@ -38,13 +37,15 @@ public class MetaWebhookController : ControllerBase
         [FromQuery(Name = "hub.verify_token")] string token,
         [FromQuery(Name = "hub.challenge")] string challenge)
     {
+        _logger.LogInformation("Receiving Meta verification request. Mode: {Mode}, Token: {Token}", mode, token);
+
         if (mode == "subscribe" && token == _verifyToken)
         {
             _logger.LogInformation("Meta Webhook verified successfully.");
             return Ok(challenge);
         }
 
-        _logger.LogWarning("Meta Webhook verification failed. Token mismatch.");
+        _logger.LogWarning("Meta Webhook verification failed. Token mismatch or invalid mode.");
         return Forbid();
     }
 
@@ -52,63 +53,16 @@ public class MetaWebhookController : ControllerBase
     /// Endpoint to receive incoming messages from WhatsApp Cloud API.
     /// </summary>
     [HttpPost]
-    public async Task<IActionResult> ReceiveMessage([FromBody] JsonElement body)
+    public IActionResult ReceiveMessage([FromBody] JsonElement body)
     {
         try
         {
+            _logger.LogDebug("Meta Webhook received: {Body}", body.GetRawText());
+
             if (body.TryGetProperty("object", out var objProperty) && objProperty.GetString() == "whatsapp_business_account")
             {
-                var entries = body.GetProperty("entry").EnumerateArray();
-                foreach (var entry in entries)
-                {
-                    var changes = entry.GetProperty("changes").EnumerateArray();
-                    foreach (var change in changes)
-                    {
-                        var value = change.GetProperty("value");
-                        if (value.TryGetProperty("messages", out var messages))
-                        {
-                            var messageArray = messages.EnumerateArray();
-                            foreach (var message in messageArray)
-                            {
-                                if (message.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "text")
-                                {
-                                    var fromPhone = message.GetProperty("from").GetString();
-                                    var text = message.GetProperty("text").GetProperty("body").GetString();
-
-                                    // For Meta API, the phone number ID is usually what identifies the tenant/business
-                                    var phoneNumberId = value.GetProperty("metadata").GetProperty("phone_number_id").GetString();
-
-                                    _logger.LogInformation("Received Meta message from {From}: {Text}", fromPhone, text);
-
-                                    // Resolve tenant by Phone Number ID (configured in mappings or DB)
-                                    // Let's assume the TenantResolver can handle finding a tenant by their Meta Phone_Number_Id
-                                    // Here we simulate resolving the tenant. You might need to update InMemoryTenantResolver to map this.
-                                    var tenantId = await ResolveTenantFromMetaIdAsync(phoneNumberId);
-
-                                    if (tenantId != null && !string.IsNullOrEmpty(fromPhone) && !string.IsNullOrEmpty(text))
-                                    {
-                                        var sessionId = GenerateSessionId(tenantId, fromPhone);
-                                        var metadata = new Dictionary<string, string> { { "phone", fromPhone } };
-
-                                        // Process message in the background
-                                        _ = Task.Run(async () =>
-                                        {
-                                            try
-                                            {
-                                                await _orchestrator.ProcessMessageAsync(text, sessionId, tenantId, "Meta", metadata);
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                _logger.LogError(ex, "Error processing Meta message for session {SessionId}", sessionId);
-                                            }
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
+                // Respond 200 OK immediately to satisfy Meta's retry policy
+                _ = Task.Run(async () => await ProcessIncomingMessageAsync(body));
                 return Ok();
             }
 
@@ -121,11 +75,78 @@ public class MetaWebhookController : ControllerBase
         }
     }
 
-    private async Task<string?> ResolveTenantFromMetaIdAsync(string phoneNumberId)
+    private async Task ProcessIncomingMessageAsync(JsonElement body)
     {
-        // For local development or mock, just return a default tenant if you don't have a mapping table.
-        // In a real database, you query: SELECT TenantId FROM TenantConfigurations WHERE MetaPhoneNumberId = @id
-        return await Task.FromResult("tenant_1");
+        try
+        {
+            var entries = body.GetProperty("entry").EnumerateArray();
+            foreach (var entry in entries)
+            {
+                var changes = entry.GetProperty("changes").EnumerateArray();
+                foreach (var change in changes)
+                {
+                    var value = change.GetProperty("value");
+                    if (value.TryGetProperty("messages", out var messages))
+                    {
+                        var messageArray = messages.EnumerateArray();
+                        foreach (var message in messageArray)
+                        {
+                            if (message.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "text")
+                            {
+                                var fromPhone = message.GetProperty("from").GetString();
+                                var text = message.GetProperty("text").GetProperty("body").GetString();
+                                var phoneNumberId = value.GetProperty("metadata").GetProperty("phone_number_id").GetString();
+
+                                if (!string.IsNullOrEmpty(fromPhone) && !string.IsNullOrEmpty(text) && !string.IsNullOrEmpty(phoneNumberId))
+                                {
+                                    _logger.LogInformation("Received Meta message from {From}: {Text}", fromPhone, text);
+                                    await OrchestrateAndResponseAsync(fromPhone, text, phoneNumberId);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Background error processing Meta message.");
+        }
+    }
+
+    private async Task OrchestrateAndResponseAsync(string fromPhone, string text, string phoneNumberId)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<IChatOrchestrator>();
+        var tenantResolver = scope.ServiceProvider.GetRequiredService<ITenantResolver>();
+        var messageFactory = scope.ServiceProvider.GetRequiredService<IMessageSenderFactory>();
+        var tenantContext = scope.ServiceProvider.GetRequiredService<TenantContext>();
+
+        // 1. Resolve Tenant
+        // Simple mapping: for now we use 'tenant_1' as fallback or try to find a tenant with this Meta PhoneId
+        // In a real scenario, you'd have a mapping table: MetaPhoneId -> TenantId
+        string tenantId = "tenant_1"; 
+        
+        var tenant = await tenantResolver.ResolveAsync(tenantId);
+        if (tenant == null)
+        {
+            _logger.LogError("Could not resolve tenant for Meta PhoneId {PhoneId}", phoneNumberId);
+            return;
+        }
+
+        tenantContext.CurrentTenant = tenant;
+
+        // 2. Orchestrate AI Response
+        var sessionId = GenerateSessionId(tenantId, fromPhone);
+        var metadata = new Dictionary<string, string> { { "phone", fromPhone } };
+
+        var result = await orchestrator.ProcessMessageAsync(text, sessionId, tenantId, "Meta", metadata);
+
+        // 3. Send Response Back
+        var sender = messageFactory.CreateSender(tenant);
+        await sender.SendAsync(fromPhone, result.Response);
+        
+        _logger.LogInformation("Meta response sent to {To}: {Response}", fromPhone, result.Response);
     }
 
     private static Guid GenerateSessionId(string tenantId, string phone)

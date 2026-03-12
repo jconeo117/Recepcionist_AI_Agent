@@ -41,10 +41,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = builder.Configuration["Jwt:Audience"] ?? "ReceptionistAI_ClientDashboard",
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(secretKey))
         };
+        
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/dashboard"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
+        };
     });
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.AddMemoryCache();
 
 // --- CORS for Admin Panel ---
 builder.Services.AddCors(options =>
@@ -52,11 +67,14 @@ builder.Services.AddCors(options =>
     options.AddPolicy("AdminPanel", policy =>
     {
         policy.WithOrigins(
-                "http://localhost:5173",  // Vite dev server
-                "http://localhost:4173",  // Vite preview
-                "http://127.0.0.1:5173")
+                "http://localhost:5173",  // Vite dev server (Admin Panel)
+                "http://127.0.0.1:5173",
+                "http://localhost:5174",  // Vite dev server (Client Dashboard)
+                "http://127.0.0.1:5174",
+                "http://localhost:4173")  // Vite preview
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 builder.Services.AddEndpointsApiExplorer();
@@ -65,6 +83,7 @@ builder.Services.AddSwaggerGen(c =>
     c.OperationFilter<ReceptionistAgent.Api.Swagger.TenantHeaderOperationFilter>();
 });
 builder.Services.AddHealthChecks();
+builder.Services.AddSignalR();
 
 // --- Rate Limiting Config ---
 builder.Services.AddRateLimiter(options =>
@@ -83,8 +102,15 @@ builder.Services.AddRateLimiter(options =>
 var coreConnStr = builder.Configuration
     .GetConnectionString("AgentCore")!;
 
-builder.Services.AddSingleton<ITenantResolver>(
+builder.Services.AddSingleton<SqlTenantRepository>(
     _ => new SqlTenantRepository(coreConnStr));
+
+builder.Services.AddSingleton<ITenantResolver>(sp =>
+{
+    var inner = sp.GetRequiredService<SqlTenantRepository>();
+    var cache = sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+    return new CachedTenantResolver(inner, cache);
+});
 
 // --- Tenant Configuration ---
 // var tenantsConfig = new Dictionary<string, TenantConfiguration>(StringComparer.OrdinalIgnoreCase);
@@ -242,18 +268,20 @@ if (!app.Environment.IsDevelopment())
 // CORS for Admin Panel (antes de middlewares)
 app.UseCors("AdminPanel");
 
+// Autenticación primero para que el User.Claims esté disponible
+app.UseAuthentication();
+app.UseAuthorization();
+
 // Tenant resolution middleware (antes de controllers)
 app.UseMiddleware<TenantMiddleware>();
 
 // Session context middleware (después de tenant)
 app.UseMiddleware<SessionContextMiddleware>();
-
-app.UseAuthentication();
-app.UseAuthorization();
 app.UseRateLimiter(); // Apply rate limiting BEFORE controllers
 
 app.MapControllers();
 app.MapHealthChecks("/health");
+app.MapHub<ReceptionistAgent.Api.Hubs.DashboardHub>("/hubs/dashboard");
 
 app.Run();
 

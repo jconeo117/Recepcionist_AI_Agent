@@ -6,6 +6,7 @@ using ReceptionistAgent.Connectors.Security;
 using ReceptionistAgent.Core.Security;
 using ReceptionistAgent.Core.Services;
 using ReceptionistAgent.Core.Session;
+using Microsoft.AspNetCore.SignalR;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -23,6 +24,7 @@ public class ChatOrchestrator : IChatOrchestrator
     private readonly IAuditLogger _auditLogger;
     private readonly TenantContext _tenantContext;
     private readonly ISessionContext _sessionContext;
+    private readonly Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> _hubContext;
 
     public ChatOrchestrator(
         IRecepcionistAgent agent,
@@ -33,7 +35,8 @@ public class ChatOrchestrator : IChatOrchestrator
         IOutputFilter outputFilter,
         IAuditLogger auditLogger,
         TenantContext tenantContext,
-        ISessionContext sessionContext)
+        ISessionContext sessionContext,
+        Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> hubContext)
     {
         _agent = agent;
         _sessionRepository = sessionRepository;
@@ -44,6 +47,7 @@ public class ChatOrchestrator : IChatOrchestrator
         _auditLogger = auditLogger;
         _tenantContext = tenantContext;
         _sessionContext = sessionContext;
+        _hubContext = hubContext;
     }
 
     public async Task<OrchestrationResult> ProcessMessageAsync(
@@ -125,13 +129,13 @@ public class ChatOrchestrator : IChatOrchestrator
             };
         }
 
-        await _sessionRepository.UpdateChatHistoryAsync(sessionId, tenantId, history);
+        await _sessionRepository.UpdateChatHistoryAsync(sessionId, tenantId, history, userPhone);
 
         // ═══ PASO 3: Output Filter ═══
         var allowedPhones = _tenantContext.CurrentTenant?.Phone != null
             ? new[] { _tenantContext.CurrentTenant.Phone }
             : null;
-        var filterResult = await _outputFilter.FilterAsync(response, tenantId, allowedPhones);
+        var filterResult = await _outputFilter.FilterAsync(response, tenantId, allowedPhones, new[] { message });
 
         if (filterResult.WasModified)
         {
@@ -159,6 +163,12 @@ public class ChatOrchestrator : IChatOrchestrator
             Content = filterResult.FilteredContent,
             Metadata = metadata
         });
+
+        // Broadcast real-time update to the Client Dashboard via SignalR WebSockets
+        if (_hubContext != null)
+        {
+            await _hubContext.Clients.Group(tenantId).SendAsync("ReceiveSessionUpdate");
+        }
 
         return new OrchestrationResult
         {

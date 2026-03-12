@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.SemanticKernel.ChatCompletion;
 using ReceptionistAgent.Connectors.Repositories;
 using ReceptionistAgent.Core.Services;
+using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
 
 namespace ReceptionistAgent.Api.Controllers;
@@ -14,13 +15,16 @@ public class DashboardController : ControllerBase
 {
     private readonly IChatSessionRepository _sessionRepository;
     private readonly IMessageSenderFactory _messageSenderFactory;
+    private readonly Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> _hubContext;
 
     public DashboardController(
         IChatSessionRepository sessionRepository,
-        IMessageSenderFactory messageSenderFactory)
+        IMessageSenderFactory messageSenderFactory,
+        Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> hubContext)
     {
         _sessionRepository = sessionRepository;
         _messageSenderFactory = messageSenderFactory;
+        _hubContext = hubContext;
     }
 
     [HttpGet("sessions")]
@@ -72,6 +76,12 @@ public class DashboardController : ControllerBase
         // Send the message via WhatsApp/Twilio
         var sender = await _messageSenderFactory.CreateSenderAsync(tenantId);
         await sender.SendAsync(session.UserPhone, request.Message);
+
+        // Broadcast real-time update to the Client Dashboard via SignalR WebSockets
+        if (_hubContext != null)
+        {
+            await _hubContext.Clients.Group(tenantId).SendAsync("ReceiveSessionUpdate");
+        }
 
         return Ok(new { success = true });
     }

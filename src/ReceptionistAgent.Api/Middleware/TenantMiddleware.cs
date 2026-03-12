@@ -24,16 +24,24 @@ public class TenantMiddleware
         // Permitir Swagger, health checks, audit y admin sin tenant
         var path = context.Request.Path.Value?.ToLower() ?? "";
         if (path.StartsWith("/swagger") || path.StartsWith("/health")
-            || path.StartsWith("/api/audit") || path.StartsWith("/api/admin"))
+            || path.StartsWith("/api/audit") || path.StartsWith("/api/admin")
+            || path.StartsWith("/api/tenant/auth") || path.StartsWith("/hubs/dashboard")
+            || path.StartsWith("/api/webhook/meta"))
         {
             await _next(context);
             return;
         }
 
-        // Extraer de Header primero
-        string? tenantId = context.Request.Headers[TenantHeaderName];
+        // 1. Extraer del JWT (Si el usuario ya está autenticado en el Dashboard)
+        string? tenantId = context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
-        // Fallback para webhooks de Twilio (vienen en la URL: /api/twilio/{tenantId})
+        // 2. Fallback al Header X-Tenant-Id (Para llamadas API puras sin JWT)
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            tenantId = context.Request.Headers[TenantHeaderName];
+        }
+
+        // 3. Fallback para webhooks de Twilio (vienen en la URL: /api/twilio/{tenantId})
         if (string.IsNullOrWhiteSpace(tenantId) && path.StartsWith("/api/twilio/"))
         {
             var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
