@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using System.Net.Http;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Services;
@@ -11,15 +12,18 @@ public class MessageSenderFactory : IMessageSenderFactory
     private readonly ITenantResolver _tenantResolver;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IConfiguration _configuration;
 
     public MessageSenderFactory(
         ITenantResolver tenantResolver,
         ILoggerFactory loggerFactory,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration)
     {
         _tenantResolver = tenantResolver;
         _loggerFactory = loggerFactory;
         _httpClientFactory = httpClientFactory;
+        _configuration = configuration;
     }
 
     public async Task<IMessageSender> CreateSenderAsync(string tenantId)
@@ -39,20 +43,34 @@ public class MessageSenderFactory : IMessageSenderFactory
         {
             var logger = _loggerFactory.CreateLogger<MetaWhatsAppSender>();
             var httpClient = _httpClientFactory.CreateClient("MetaGraphApi");
-            return new MetaWhatsAppSender(
-                httpClient,
-                tenantConfig.MessageProviderAccount,
-                tenantConfig.MessageProviderToken,
-                logger);
+
+            var account = !string.IsNullOrWhiteSpace(tenantConfig.MessageProviderAccount)
+                ? tenantConfig.MessageProviderAccount
+                : _configuration["Meta:PhoneNumberId"] ?? string.Empty;
+
+            var token = !string.IsNullOrWhiteSpace(tenantConfig.MessageProviderToken)
+                ? tenantConfig.MessageProviderToken
+                : _configuration["Meta:AccessToken"] ?? string.Empty;
+
+            return new MetaWhatsAppSender(httpClient, account, token, logger);
         }
         else // Twilio (Default)
         {
             var logger = _loggerFactory.CreateLogger<TwilioMessageSender>();
-            return new TwilioMessageSender(
-                tenantConfig.MessageProviderAccount,
-                tenantConfig.MessageProviderToken,
-                tenantConfig.MessageProviderPhone,
-                logger);
+
+            var account = !string.IsNullOrWhiteSpace(tenantConfig.MessageProviderAccount)
+                ? tenantConfig.MessageProviderAccount
+                : _configuration["Twilio:AccountSid"] ?? string.Empty;
+
+            var token = !string.IsNullOrWhiteSpace(tenantConfig.MessageProviderToken)
+                ? tenantConfig.MessageProviderToken
+                : _configuration["Twilio:AuthToken"] ?? string.Empty;
+
+            var phone = !string.IsNullOrWhiteSpace(tenantConfig.MessageProviderPhone)
+                ? tenantConfig.MessageProviderPhone
+                : _configuration["Twilio:FromNumber"] ?? string.Empty;
+
+            return new TwilioMessageSender(account, token, phone, logger);
         }
     }
 }

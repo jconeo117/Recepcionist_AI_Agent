@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace ReceptionistAgent.Connectors.Repositories;
@@ -18,6 +19,14 @@ public class InMemoryChatSessionRepository : IChatSessionRepository
 
         if (_sessions.TryGetValue(sessionId, out var history))
         {
+            // Remove old system messages and inject the fresh one
+            var existingSystemMessages = history.Where(m => m.Role == AuthorRole.System).ToList();
+            foreach (var systemMsg in existingSystemMessages)
+            {
+                history.Remove(systemMsg);
+            }
+            history.Insert(0, new ChatMessageContent(AuthorRole.System, systemPrompt));
+
             return Task.FromResult(history);
         }
 
@@ -26,7 +35,7 @@ public class InMemoryChatSessionRepository : IChatSessionRepository
         return Task.FromResult(newHistory);
     }
 
-    public Task UpdateChatHistoryAsync(Guid sessionId, string tenantId, ChatHistory history)
+    public Task UpdateChatHistoryAsync(Guid sessionId, string tenantId, ChatHistory history, string? userPhone = null)
     {
         _sessions.AddOrUpdate(sessionId, history, (key, oldValue) => history);
 

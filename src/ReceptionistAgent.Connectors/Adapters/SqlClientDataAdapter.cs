@@ -27,10 +27,17 @@ public class SqlClientDataAdapter : IClientDataAdapter
 
     public Task<List<ServiceProvider>> SearchProvidersAsync(string query)
     {
+        if (string.IsNullOrWhiteSpace(query))
+            return Task.FromResult(new List<ServiceProvider>());
+
+        var normalizedQuery = ReceptionistAgent.Core.Utils.TextHelper.RemoveAccents(query);
+
         var result = _tenantProviders
-            .Where(p => p.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                        p.Role.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Where(p => 
+                ReceptionistAgent.Core.Utils.TextHelper.RemoveAccents(p.Name).Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) ||
+                ReceptionistAgent.Core.Utils.TextHelper.RemoveAccents(p.Role).Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
             .ToList();
+
         return Task.FromResult(result);
     }
 

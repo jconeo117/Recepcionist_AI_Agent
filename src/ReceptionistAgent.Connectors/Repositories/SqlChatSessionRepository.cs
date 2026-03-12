@@ -40,18 +40,15 @@ public class SqlChatSessionRepository : IChatSessionRepository
             var history = new ChatHistory();
             if (messages != null)
             {
-                foreach (var msg in messages)
+                // Filter out old system messages so we can inject the fresh one
+                foreach (var msg in messages.Where(m => m.Role != AuthorRole.System))
                 {
                     history.Add(msg);
                 }
             }
 
-            // Ensure system prompt is present in restored history.
-            // Serialization may lose it, and without it the LLM forgets its role.
-            if (!history.Any(m => m.Role == AuthorRole.System))
-            {
-                history.Insert(0, new ChatMessageContent(AuthorRole.System, systemPrompt));
-            }
+            // Always inject the up-to-date system prompt at the beginning
+            history.Insert(0, new ChatMessageContent(AuthorRole.System, systemPrompt));
 
             return history;
         }
@@ -62,7 +59,7 @@ public class SqlChatSessionRepository : IChatSessionRepository
         }
     }
 
-    public async Task UpdateChatHistoryAsync(Guid sessionId, string tenantId, ChatHistory history)
+    public async Task UpdateChatHistoryAsync(Guid sessionId, string tenantId, ChatHistory history, string? userPhone = null)
     {
         // Filter out tool-related messages before persisting.
         // Groq's strict validation rejects deserialized FunctionCall/FunctionResult
@@ -95,7 +92,7 @@ public class SqlChatSessionRepository : IChatSessionRepository
         // If it didn't update anything, it means it doesn't exist anymore, let's insert it
         if (rows == 0)
         {
-            await InsertChatHistoryAsync(sessionId, tenantId, history, null);
+            await InsertChatHistoryAsync(sessionId, tenantId, history, userPhone);
         }
     }
 
@@ -142,7 +139,6 @@ public class SqlChatSessionRepository : IChatSessionRepository
             SELECT Id, TenantId, UserPhone, NeedsHumanAttention, CreatedAt, UpdatedAt 
             FROM ChatSessions 
             WHERE TenantId = @TenantId 
-              AND (NeedsHumanAttention = 1 OR UpdatedAt >= DATEADD(day, -1, GETUTCDATE()))
             ORDER BY UpdatedAt DESC";
 
         using var connection = new SqlConnection(_connectionString);
