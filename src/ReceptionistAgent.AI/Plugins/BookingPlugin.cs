@@ -231,7 +231,8 @@ public class BookingPlugin
                 {
                     try
                     {
-                        await _reminderService.ScheduleRemindersForBookingAsync(booking, clientPhone);
+                        var countryCode = _tenantContext.CurrentTenant?.PhoneCountryCode ?? "";
+                        await _reminderService.ScheduleRemindersForBookingAsync(booking, clientPhone, countryCode);
                         _logger.LogInformation("Reminders scheduled for booking {Code}", booking.ConfirmationCode);
                     }
                     catch (Exception ex)
