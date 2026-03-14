@@ -21,6 +21,9 @@ public class TenantConfiguration
     [JsonPropertyName("timezoneId")]
     public string TimeZoneId { get; set; } = "UTC"; // ID de zona horaria (ej: "SA Pacific Standard Time" o "America/Bogota" dependiedo del OS)
 
+    // Después de MessageProviderPhone:
+    public string PhoneCountryCode { get; set; } = string.Empty; // ej: "57" para Colombia
+
     [JsonPropertyName("dbType")]
     public string DbType { get; set; } = "InMemory"; // "InMemory", "SqlServer", etc.
 

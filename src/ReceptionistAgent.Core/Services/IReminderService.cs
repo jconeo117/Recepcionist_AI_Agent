@@ -11,7 +11,7 @@ public interface IReminderService
     /// <summary>
     /// Agenda recordatorios a 24h y 1-2h antes de la cita.
     /// </summary>
-    Task ScheduleRemindersForBookingAsync(BookingRecord booking, string recipientPhone);
+    Task ScheduleRemindersForBookingAsync(BookingRecord booking, string recipientPhone, string PhoneCountryCode = "");
 
     /// <summary>
     /// Obtiene recordatorios pendientes cuya hora de envío ya pasó.
