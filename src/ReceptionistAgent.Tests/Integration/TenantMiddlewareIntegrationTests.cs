@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Tenant;
+using Microsoft.Extensions.Configuration;
+using ReceptionistAgent.Core.Services;
 using Xunit;
 
 namespace ReceptionistAgent.Tests.Integration;
@@ -21,9 +23,25 @@ public class TenantMiddlewareIntegrationTests : IClassFixture<WebApplicationFact
     {
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.ConfigureAppConfiguration((context, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Jwt:Key"] = "TEST_SECRET_KEY_32_CHARS_LONG_FOR_TESTING_ONLY",
+                    ["Jwt:Issuer"] = "ReceptionistAI",
+                    ["Jwt:Audience"] = "ReceptionistAI_ClientDashboard",
+                    ["ConnectionStrings:AgentCore"] = "Server=localhost;Database=TestDB;Trusted_Connection=True;"
+                });
+            });
+
             builder.ConfigureServices(services =>
             {
                 var mockTenantResolver = new Mock<ITenantResolver>();
+                var mockBillingService = new Mock<IBillingService>();
+                
+                mockBillingService.Setup(b => b.IsTenantAllowedAsync(It.IsAny<string>()))
+                    .ReturnsAsync(true);
+
                 var mockTenant = new TenantConfiguration
                 {
                     TenantId = "clinica-salud-total",
@@ -40,6 +58,7 @@ public class TenantMiddlewareIntegrationTests : IClassFixture<WebApplicationFact
                     .ReturnsAsync(new List<TenantConfiguration> { mockTenant });
 
                 services.Replace(ServiceDescriptor.Singleton<ITenantResolver>(mockTenantResolver.Object));
+                services.Replace(ServiceDescriptor.Singleton<IBillingService>(mockBillingService.Object));
             });
         });
         _client = _factory.CreateClient();

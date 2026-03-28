@@ -2,15 +2,16 @@ import { useState } from "react";
 import { useTheme } from "../styles/tokens";
 
 const BUSINESS_TYPES = ["clinic", "salon", "wellness", "nails", "workshop", "restaurant", "gym", "other"];
-const DB_TYPES = ["InMemory", "SqlServer"];
+const DB_TYPES = ["InMemory", "SqlServer", "PostgreSql"];
 const TIMEZONES = ["America/Bogota", "America/New_York", "America/Mexico_City", "America/Lima", "America/Santiago", "UTC"];
+const MESSAGE_PROVIDERS = ["Twilio", "Meta"];
 
 const emptyProvider = () => ({
   id: "", name: "", role: "", workingDays: [],
   startTime: "09:00", endTime: "18:00", slotDurationMinutes: 30,
 });
 
-const STEPS = ["Básicos", "Base de Datos", "Servicios"];
+const STEPS = ["Básicos", "Base de Datos", "Mensajería", "Servicios"];
 
 export default function CreateTenantModal({ onClose, onCreate }) {
   const { colors: C, styles: s } = useTheme();
@@ -23,6 +24,7 @@ export default function CreateTenantModal({ onClose, onCreate }) {
     username: "", passwordHash: "",
     timeZoneId: "America/Bogota", address: "", phone: "", phoneCountryCode: "", workingHours: "",
     dbType: "InMemory", connectionString: "",
+    messageProvider: "Twilio", messageProviderAccount: "", messageProviderToken: "", messageProviderPhone: "",
     services: [""],
   });
 
@@ -53,7 +55,11 @@ export default function CreateTenantModal({ onClose, onCreate }) {
         phoneCountryCode: form.phoneCountryCode.trim(),
         workingHours: form.workingHours.trim(),
         dbType: form.dbType,
-        connectionString: form.dbType === "SqlServer" ? form.connectionString.trim() : "",
+        connectionString: form.dbType !== "InMemory" ? form.connectionString.trim() : "",
+        messageProvider: form.messageProvider,
+        messageProviderAccount: form.messageProviderAccount.trim(),
+        messageProviderToken: form.messageProviderToken.trim(),
+        messageProviderPhone: form.messageProviderPhone.trim(),
         services: form.services.filter(sv => sv.trim()),
         providers: [],
       };
@@ -143,10 +149,10 @@ export default function CreateTenantModal({ onClose, onCreate }) {
             <select style={selectStyle} value={form.dbType} onChange={e => set("dbType", e.target.value)}>
               {DB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            {form.dbType === "SqlServer" && (
+            {form.dbType !== "InMemory" && (
               <>
                 <label style={labelStyle}>Connection String *</label>
-                <input style={inputStyle} placeholder="Server=...;Database=...;User Id=...;Password=...;" value={form.connectionString} onChange={e => set("connectionString", e.target.value)} />
+                <input style={inputStyle} placeholder="Server=... / Host=..." value={form.connectionString} onChange={e => set("connectionString", e.target.value)} />
                 <div style={{ fontSize: 10, color: C.textDim, marginTop: -6, marginBottom: 12 }}>
                   ⓘ La base de datos debe tener la tabla <code style={{ color: C.textMuted }}>Bookings</code> creada.
                 </div>
@@ -161,6 +167,27 @@ export default function CreateTenantModal({ onClose, onCreate }) {
         )}
 
         {step === 2 && (
+          <div className="fade-in">
+             <label style={labelStyle}>Proveedor de Mensajería</label>
+             <select style={selectStyle} value={form.messageProvider} onChange={e => set("messageProvider", e.target.value)}>
+               {MESSAGE_PROVIDERS.map(t => <option key={t} value={t}>{t}</option>)}
+             </select>
+             
+             <label style={labelStyle}>Account SID / Phone Number ID</label>
+             <input style={inputStyle} placeholder="Dejar en blanco para usar el global / sandbox" value={form.messageProviderAccount} onChange={e => set("messageProviderAccount", e.target.value)} />
+             
+             <label style={labelStyle}>Auth Token / Access Token</label>
+             <input style={inputStyle} placeholder="Dejar en blanco para usar el global / sandbox" value={form.messageProviderToken} onChange={e => set("messageProviderToken", e.target.value)} />
+
+             <label style={labelStyle}>Número de Envío (WhatsApp)</label>
+             <input style={inputStyle} placeholder={"ej: whatsapp:+18881234567"} value={form.messageProviderPhone} onChange={e => set("messageProviderPhone", e.target.value)} />
+             <div style={{ fontSize: 10, color: C.textDim, marginTop: -6, marginBottom: 12 }}>
+                ⓘ Si los campos se dejan vacíos el sistema usará el Sandbox de manera global automáticamente.
+             </div>
+          </div>
+        )}
+
+        {step === 3 && (
           <div className="fade-in">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <label style={{ ...labelStyle, marginBottom: 0 }}>Servicios</label>

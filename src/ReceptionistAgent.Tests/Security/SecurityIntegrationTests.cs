@@ -18,7 +18,8 @@ public class SecurityIntegrationTests : IClassFixture<WebApplicationFactory<Prog
             {
                 conf.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    { "Security:ApiKeys:0", "your_super_secret_audit_api_key_1" }
+                    { "Security:ApiKeys:0", "your_super_secret_audit_api_key_1" },
+                    { "Jwt:Key", "this_is_a_very_secret_key_used_only_for_integration_testing_32_chars" }
                 });
             });
         }).CreateClient();

@@ -102,3 +102,20 @@ api_log.txt
 
 # Local scripts
 start.bat
+
+# Noise and Temporary files
+tmp/
+output.txt
+*.trx
+.gemini/
+.agents/
+bin/
+obj/
+node_modules/
+dist/
+.vs/
+.vscode/
+.idea/
+*.log
+api_log.txt
+instructions/

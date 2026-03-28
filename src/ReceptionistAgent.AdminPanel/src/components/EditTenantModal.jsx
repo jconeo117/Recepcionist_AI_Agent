@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useTheme } from "../styles/tokens";
 
 const BUSINESS_TYPES = ["clinic", "salon", "wellness", "nails", "workshop", "restaurant", "gym", "other"];
-const DB_TYPES = ["InMemory", "SqlServer"];
+const DB_TYPES = ["InMemory", "SqlServer", "PostgreSql"];
 const TIMEZONES = ["America/Bogota", "America/New_York", "America/Mexico_City", "America/Lima", "America/Santiago", "UTC"];
 const MESSAGE_PROVIDERS = ["Twilio", "Meta"];
 
@@ -69,7 +69,7 @@ export default function EditTenantModal({ initialData, onClose, onUpdate }) {
         phoneCountryCode: form.phoneCountryCode.trim(),
         workingHours: form.workingHours.trim(),
         dbType: form.dbType,
-        connectionString: form.dbType === "SqlServer" ? form.connectionString.trim() : "",
+        connectionString: form.dbType !== "InMemory" ? form.connectionString.trim() : "",
         messageProvider: form.messageProvider,
         messageProviderAccount: form.messageProviderAccount.trim(),
         messageProviderToken: form.messageProviderToken.trim(),
@@ -163,10 +163,10 @@ export default function EditTenantModal({ initialData, onClose, onUpdate }) {
             <select style={selectStyle} value={form.dbType} onChange={e => set("dbType", e.target.value)}>
               {DB_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            {form.dbType === "SqlServer" && (
+            {form.dbType !== "InMemory" && (
               <>
                 <label style={labelStyle}>Connection String *</label>
-                <input style={inputStyle} placeholder="Server=...;Database=...;User Id=...;Password=...;" value={form.connectionString} onChange={e => set("connectionString", e.target.value)} />
+                <input style={inputStyle} placeholder="Server=... / Host=..." value={form.connectionString} onChange={e => set("connectionString", e.target.value)} />
                 <div style={{ fontSize: 10, color: C.textDim, marginTop: -6, marginBottom: 12 }}>
                   ⓘ La base de datos debe tener la tabla <code style={{ color: C.textMuted }}>Bookings</code> creada.
                 </div>

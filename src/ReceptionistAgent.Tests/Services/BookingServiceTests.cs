@@ -1,6 +1,7 @@
 using ReceptionistAgent.Core.Adapters;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Services;
+using ReceptionistAgent.Core.Security;
 using Moq;
 using Xunit;
 
@@ -9,6 +10,7 @@ namespace ReceptionistAgent.Tests.Services;
 public class BookingServiceTests
 {
     private readonly Mock<IClientDataAdapter> _mockAdapter;
+    private readonly Mock<IAuditLogger> _mockAuditLogger;
     private readonly BookingService _service;
     private readonly List<ServiceProvider> _testProviders;
 
@@ -43,7 +45,8 @@ public class BookingServiceTests
         _mockAdapter.Setup(a => a.GetAllProvidersAsync())
             .ReturnsAsync(_testProviders);
 
-        _service = new BookingService(_mockAdapter.Object, new TenantContext());
+        _mockAuditLogger = new Mock<IAuditLogger>();
+        _service = new BookingService(_mockAdapter.Object, new TenantContext(), _mockAuditLogger.Object);
     }
 
     // === GetAvailableSlotsAsync ===

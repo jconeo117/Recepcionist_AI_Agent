@@ -122,15 +122,15 @@ export default function TenantsPage({ onToast }) {
                 </td>
                 <td style={{ ...s.td, fontSize: 11, color: C.textMuted }}>{tenant.businessType}</td>
                 <td style={{ ...s.td, fontSize: 12 }}>{(tenant.providers || []).length}</td>
-                <td style={s.td}><span style={s.chip(planColor(billing.planType, C))}>{billing.planType}</span></td>
+                <td style={s.td}><span style={s.chip(planColor(billing?.planType || "None", C))}>{billing?.planType || "Sin Plan"}</span></td>
                 <td style={s.td}>
                   <div style={s.row}>
-                    <div style={{ ...s.pill, background: statusColor(billing.billingStatus, C) }} />
-                    <span style={{ fontSize: 11, color: statusColor(billing.billingStatus, C) }}>{billing.billingStatus}</span>
+                    <div style={{ ...s.pill, background: statusColor(billing?.billingStatus || "Inactive", C) }} />
+                    <span style={{ fontSize: 11, color: statusColor(billing?.billingStatus || "Inactive", C) }}>{billing?.billingStatus || "Inactivo"}</span>
                   </div>
                 </td>
                 <td style={{ ...s.td, fontSize: 11, color: C.textMuted }}>
-                  {billing.activeUntil ? fmt(billing.activeUntil) : "—"}
+                  {billing?.activeUntil ? fmt(billing.activeUntil) : "—"}
                 </td>
                 <td style={s.td}><span style={{ fontSize: 10, color: C.textDim }}>→</span></td>
               </tr>

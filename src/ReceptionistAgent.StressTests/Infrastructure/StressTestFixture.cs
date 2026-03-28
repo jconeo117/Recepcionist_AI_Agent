@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ReceptionistAgent.Connectors.Repositories;
 using ReceptionistAgent.Connectors.Security;
+using ReceptionistAgent.Core.Security;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Repositories;
 using ReceptionistAgent.Core.Services;

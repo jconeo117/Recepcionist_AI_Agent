@@ -17,7 +17,7 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: jhon0106
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: receptionist_agent_core
         ports:
           - 5432:5432
@@ -34,7 +34,7 @@ jobs:
     - name: Initialize Database
       run: |
         sudo apt-get install -y postgresql-client
-        PGPASSWORD=jhon0106 psql -h localhost -U postgres -d receptionist_agent_core -f receptionist_agent_core_data.sql
+        PGPASSWORD=${{ secrets.POSTGRES_PASSWORD }} psql -h localhost -U postgres -d receptionist_agent_core -f receptionist_agent_core_data.sql
 
     - name: Setup .NET 9
       uses: actions/setup-dotnet@v4
@@ -53,10 +53,30 @@ jobs:
     - name: Run Stress Tests (Requires Gemini Key)
       env:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      # Ejecutar soolo si el secreto está configurado (para evitar gastar balance en PRs no autorizados o fallos por falta de token)
+      # Ejecutar solo si el secreto está configurado
       if: "${{ env.GEMINI_API_KEY != '' }}"
       run: |
-        # Configurar variables de entorno que .NET leerá
         export AI__Google__ApiKey="${{ secrets.GEMINI_API_KEY }}"
         export AI__Provider="Google"
         dotnet test src/ReceptionistAgent.StressTests --no-build --configuration Release --verbosity normal --logger "trx;LogFileName=stress_test_results.trx"
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: src/ReceptionistAgent.ClientDashboard/package-lock.json
+
+    - name: Install dependencies
+      working-directory: src/ReceptionistAgent.ClientDashboard
+      run: npm install
+
+    - name: Run tests (Vitest)
+      working-directory: src/ReceptionistAgent.ClientDashboard
+      run: npm test -- --run

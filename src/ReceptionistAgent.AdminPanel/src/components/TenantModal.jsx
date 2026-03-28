@@ -17,7 +17,7 @@ export default function TenantModal({ data, onClose, onSuspend, onReactivate, on
   const [healthLoading, setHealthLoading] = useState(false);
 
   useEffect(() => {
-    if (activeTab === "database" && tenant.dbType === "SqlServer") {
+    if (activeTab === "database" && tenant.dbType !== "InMemory") {
       fetchHealth();
     }
   }, [activeTab, tenant.tenantId]);
@@ -71,8 +71,8 @@ export default function TenantModal({ data, onClose, onSuspend, onReactivate, on
             <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4, fontFamily: "monospace" }}>{tenant.tenantId}</div>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <span style={s.chip(planColor(billing.planType, C))}>{billing.planType}</span>
-            <span style={s.chip(statusColor(billing.billingStatus, C))}>{billing.billingStatus}</span>
+            <span style={s.chip(planColor(billing?.planType || "None", C))}>{billing?.planType || "Sin Plan"}</span>
+            <span style={s.chip(statusColor(billing?.billingStatus || "Inactive", C))}>{billing?.billingStatus || "Inactivo"}</span>
           </div>
         </div>
 
@@ -99,7 +99,7 @@ export default function TenantModal({ data, onClose, onSuspend, onReactivate, on
                 { label: "Teléfono", value: tenant.phone || "—" },
                 { label: "Horarios", value: tenant.workingHours },
                 { label: "Zona horaria", value: tenant.timeZoneId },
-                { label: "Activo hasta", value: billing.activeUntil ? fmt(billing.activeUntil) : "Sin límite" },
+                { label: "Activo hasta", value: billing?.activeUntil ? fmt(billing.activeUntil) : "Sin límite" },
                 { label: "Creado", value: fmt(tenant.createdAt) },
                 { label: "Tipo de DB", value: tenant.dbType || "InMemory" },
                 { label: "Connection String", value: tenant.connectionString ? "••••••••" : "—" },
@@ -135,9 +135,9 @@ export default function TenantModal({ data, onClose, onSuspend, onReactivate, on
               <div style={{ fontSize: 10, color: C.textDim, marginBottom: 3 }}>WEBHOOK</div>
               <div style={{ fontSize: 11, color: C.textMuted, fontFamily: "monospace" }}>/api/twilio/{tenant.tenantId}</div>
             </div>
-            {tenant.dbType === "SqlServer" && (
+            {tenant.dbType !== "InMemory" && (
               <div style={{ fontSize: 11, color: C.orange, background: C.orangeDim, padding: "8px 12px", borderRadius: 6, border: `1px solid ${C.orangeBorder}` }}>
-                ⓘ Este tenant usa SQL Server. Los proveedores se gestionan directamente en su base de datos.
+                ⓘ Este tenant usa {tenant.dbType}. Los proveedores se gestionan directamente en su base de datos.
               </div>
             )}
           </div>
@@ -145,7 +145,7 @@ export default function TenantModal({ data, onClose, onSuspend, onReactivate, on
 
         {activeTab === "database" && (
           <div className="fade-in" style={{ marginBottom: 20 }}>
-            {tenant.dbType === "SqlServer" && dbHealth && (
+            {tenant.dbType !== "InMemory" && dbHealth && (
               <div style={{ background: C.surfaceHover, border: `1px solid ${C.border}`, borderRadius: 8, padding: 14, marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, textTransform: "uppercase" }}>Estado de Tablas (Cliente)</div>
@@ -170,7 +170,7 @@ export default function TenantModal({ data, onClose, onSuspend, onReactivate, on
         <div style={s.divider} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button style={s.btn()} onClick={() => onEdit(tenant)}>Editar</button>
-          {billing.billingStatus === "Active" ? (
+          {billing?.billingStatus === "Active" ? (
             <button style={s.btn("danger")} onClick={handleSuspend} disabled={loading}>
               {loading ? "..." : "Suspender"}
             </button>

@@ -30,11 +30,11 @@ export default function DatabaseExplorer({ tenantId, dbType }) {
     if (tab === "bookings" && !bookings) loadBookings();
   }, [tab, schema, bookings, loadSchema, loadBookings]);
 
-  if (dbType !== "SqlServer") {
+  if (dbType === "InMemory") {
     return (
       <div style={{ padding: "20px 16px", borderRadius: 6, background: C.surfaceHover, border: `1px solid ${C.border}`, fontSize: 12, color: C.textMuted, textAlign: "center" }}>
-        ⓘ Este tenant usa <strong style={{ color: C.text }}>{dbType || "InMemory"}</strong>.
-        <br />La exploración de DB solo está disponible para tenants con <strong style={{ color: C.accent }}>SqlServer</strong>.
+        ⓘ Este tenant usa <strong style={{ color: C.text }}>InMemory</strong>.
+        <br />La exploración de DB solo está disponible para tenants con bases de datos persistentes.
       </div>
     );
   }
