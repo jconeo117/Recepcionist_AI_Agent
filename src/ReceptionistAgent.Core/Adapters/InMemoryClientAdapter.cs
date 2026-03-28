@@ -13,6 +13,7 @@ namespace ReceptionistAgent.Core.Adapters;
 public class InMemoryClientAdapter : IClientDataAdapter
 {
     private readonly ConcurrentDictionary<Guid, BookingRecord> _bookings = new();
+    private readonly ConcurrentDictionary<Guid, OutboxEvent> _outbox = new();
     private readonly List<ServiceProvider> _providers;
 
     public InMemoryClientAdapter(List<ServiceProvider> providers)
@@ -27,27 +28,34 @@ public class InMemoryClientAdapter : IClientDataAdapter
         booking.Id = Guid.NewGuid();
         booking.ConfirmationCode = $"CITA-{booking.Id.ToString()[..4].ToUpper()}";
         booking.CreatedAt = DateTime.UtcNow;
+        booking.IsDeleted = false;
         _bookings.TryAdd(booking.Id, booking);
         return Task.FromResult(booking);
     }
 
     public Task<BookingRecord?> GetBookingByCodeAsync(string confirmationCode)
     {
-        var booking = _bookings.Values.FirstOrDefault(b => b.ConfirmationCode == confirmationCode);
+        var booking = _bookings.Values.FirstOrDefault(b => b.ConfirmationCode == confirmationCode && !b.IsDeleted);
         return Task.FromResult(booking);
     }
 
     public Task<List<BookingRecord>> GetBookingsByDateAsync(DateTime date)
     {
         var result = _bookings.Values
-            .Where(b => b.ScheduledDate.Date == date.Date)
+            .Where(b => b.ScheduledDate.Date == date.Date && !b.IsDeleted)
             .ToList();
         return Task.FromResult(result);
     }
 
+    public Task<BookingRecord?> GetBookingByIdempotencyKeyAsync(string key)
+    {
+        var booking = _bookings.Values.FirstOrDefault(b => b.IdempotencyKey == key && !b.IsDeleted);
+        return Task.FromResult(booking);
+    }
+
     public Task<List<BookingRecord>> GetAllBookingsAsync()
     {
-        return Task.FromResult(_bookings.Values.ToList());
+        return Task.FromResult(_bookings.Values.Where(b => !b.IsDeleted).ToList());
     }
 
     public Task<bool> UpdateBookingAsync(BookingRecord booking)
@@ -60,12 +68,21 @@ public class InMemoryClientAdapter : IClientDataAdapter
         return Task.FromResult(true);
     }
 
-    public Task<bool> DeleteBookingAsync(string id)
+    public Task<bool> DeleteBookingAsync(string id, string deletedBy = "system")
     {
         if (!Guid.TryParse(id, out var guid))
             return Task.FromResult(false);
 
-        return Task.FromResult(_bookings.TryRemove(guid, out _));
+        if (_bookings.TryGetValue(guid, out var booking))
+        {
+            booking.IsDeleted = true;
+            booking.DeletedAt = DateTime.UtcNow;
+            booking.DeletedBy = deletedBy;
+            booking.Status = BookingStatus.Cancelled;
+            return Task.FromResult(true);
+        }
+
+        return Task.FromResult(false);
     }
 
     public Task<bool> ExistsAsync(DateTime date, TimeSpan time, string providerId)
@@ -74,7 +91,8 @@ public class InMemoryClientAdapter : IClientDataAdapter
             b.ScheduledDate.Date == date.Date &&
             b.ScheduledTime == time &&
             b.ProviderId == providerId &&
-            b.Status != BookingStatus.Cancelled);
+            b.Status != BookingStatus.Cancelled &&
+            !b.IsDeleted);
         return Task.FromResult(exists);
     }
 
@@ -85,7 +103,8 @@ public class InMemoryClientAdapter : IClientDataAdapter
         var booking = _bookings.Values.FirstOrDefault(b =>
             b.CustomFields.TryGetValue("clientId", out var pid) &&
             pid?.ToString()?.Equals(clientId, StringComparison.OrdinalIgnoreCase) == true &&
-            b.Status != BookingStatus.Cancelled);
+            b.Status != BookingStatus.Cancelled &&
+            !b.IsDeleted);
         return Task.FromResult(booking);
     }
 
@@ -94,7 +113,8 @@ public class InMemoryClientAdapter : IClientDataAdapter
         var bookings = _bookings.Values
             .Where(b =>
                 b.CustomFields.TryGetValue("clientId", out var pid) &&
-                pid?.ToString()?.Equals(clientId, StringComparison.OrdinalIgnoreCase) == true)
+                pid?.ToString()?.Equals(clientId, StringComparison.OrdinalIgnoreCase) == true &&
+                !b.IsDeleted)
             .ToList();
         return Task.FromResult(bookings);
     }
@@ -126,5 +146,69 @@ public class InMemoryClientAdapter : IClientDataAdapter
         }).ToList();
 
         return Task.FromResult(results);
+    }
+
+    public Task<bool> AddProviderAsync(ServiceProvider provider)
+    {
+        if (string.IsNullOrWhiteSpace(provider.Id))
+            provider.Id = Guid.NewGuid().ToString();
+
+        _providers.Add(provider);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> UpdateProviderAsync(ServiceProvider provider)
+    {
+        var existing = _providers.FirstOrDefault(p => p.Id == provider.Id);
+        if (existing == null) return Task.FromResult(false);
+
+        _providers.Remove(existing);
+        _providers.Add(provider);
+        return Task.FromResult(true);
+    }
+
+    public Task<bool> DeleteProviderAsync(string id)
+    {
+        var existing = _providers.FirstOrDefault(p => p.Id == id);
+        if (existing == null) return Task.FromResult(false);
+
+        _providers.Remove(existing);
+        return Task.FromResult(true);
+    }
+
+    // === Outbox ===
+
+    public Task AddOutboxEventAsync(OutboxEvent @event)
+    {
+        _outbox.TryAdd(@event.Id, @event);
+        return Task.CompletedTask;
+    }
+
+    public Task<List<OutboxEvent>> GetUnprocessedOutboxEventsAsync(int limit = 10)
+    {
+        var events = _outbox.Values
+            .Where(e => e.ProcessedAt == null)
+            .OrderBy(e => e.CreatedAt)
+            .Take(limit)
+            .ToList();
+        return Task.FromResult(events);
+    }
+
+    public Task UpdateOutboxStatusAsync(Guid id, bool success, string? error = null)
+    {
+        if (_outbox.TryGetValue(id, out var @event))
+        {
+            if (success)
+            {
+                @event.ProcessedAt = DateTime.UtcNow;
+                @event.LastError = null;
+            }
+            else
+            {
+                @event.RetryCount++;
+                @event.LastError = error;
+            }
+        }
+        return Task.CompletedTask;
     }
 }

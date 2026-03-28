@@ -49,7 +49,62 @@ public class TenantConfiguration
     // Persistence fields
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public string? WebhookUrl { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Define qué campos son obligatorios al agendar.
+    /// Si es null, se usan defaults seguros (RequiresClientId = true).
+    /// </summary>
+    public BookingRequirements BookingRequirements { get; set; } = new();
+
+    /// <summary>
+    /// Modalidad del servicio. Afecta el flujo de preguntas del agente.
+    /// </summary>
+    public ServiceModality ServiceModality { get; set; } = ServiceModality.InPerson;
+
+    /// <summary>
+    /// Instrucciones personalizadas (System Prompt) para el agente de este tenant.
+    /// </summary>
+    public string SystemPrompt { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Define qué datos son obligatorios al agendar una cita para este tenant.
+/// Los defaults se asignan automáticamente según el businessType al crear el tenant.
+/// Los campos opcionales son guiados por el agente pero no bloquean el booking si se omiten.
+/// </summary>
+public class BookingRequirements
+{
+    // Identificación
+    public bool RequiresClientId { get; set; } = true;
+
+    // Datos de salud — activados para tenants médicos, base para FHIR R4
+    public bool RequiresBirthDate { get; set; } = false;
+    public bool RequiresGender { get; set; } = false;
+    public bool RequiresInsurance { get; set; } = false;
+
+    // Contacto
+    public bool RequiresEmail { get; set; } = false;
+
+    // Logística
+    public bool RequiresAddress { get; set; } = false; // Activado automáticamente en modalidad AtHome
+
+    // Extensible: campos personalizados por tenant (nombre del campo → obligatorio/opcional)
+    // Ejemplo: { "mascota": true } para veterinarias
+    public Dictionary<string, bool> CustomRequiredFields { get; set; } = new();
+}
+
+/// <summary>
+/// Modalidad de prestación del servicio.
+/// Afecta qué datos pide el agente y cómo redacta la confirmación.
+/// </summary>
+public enum ServiceModality
+{
+    InPerson = 0,  // Cliente va al negocio (default)
+    AtHome = 1,    // Proveedor va donde el cliente → agente pide dirección
+    Virtual = 2,   // Videollamada / llamada → agente pide plataforma preferida
+    Hybrid = 3     // Agente pregunta preferencia al cliente
 }
 
 /// <summary>

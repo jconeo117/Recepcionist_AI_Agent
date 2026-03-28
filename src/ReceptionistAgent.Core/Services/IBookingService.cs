@@ -1,4 +1,5 @@
 using ReceptionistAgent.Core.Models;
+using ReceptionistAgent.Core.Security;
 
 namespace ReceptionistAgent.Core.Services;
 
@@ -10,8 +11,11 @@ public interface IBookingService
         string providerId,
         DateTime date,
         TimeSpan time,
-        Dictionary<string, object>? customFields = null);
+        Dictionary<string, object>? customFields = null,
+        string? idempotencyKey = null);
+    Task<BookingRecord?> GetBookingByIdempotencyKeyAsync(string key);
     Task<bool> CancelBookingAsync(string confirmationCode);
+    Task<bool> DeleteBookingAsync(string id, string deletedBy = "system");
     Task<BookingRecord?> GetBookingAsync(string confirmationCode);
     Task<List<BookingRecord>> GetBookingsByDateAsync(DateTime date);
 

@@ -6,6 +6,7 @@ public class BookingRecord
     public Guid Id { get; set; }
     public string TenantId { get; set; } = string.Empty;
     public string ConfirmationCode { get; set; } = string.Empty;
+    public string? IdempotencyKey { get; set; } // Key to prevent double booking
 
     // Cliente (quien solicita la cita)
     public string ClientName { get; set; } = string.Empty;
@@ -27,6 +28,11 @@ public class BookingRecord
     // Metadata
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+    
+    // Soft-delete and Audit
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
 }
 
 public enum BookingStatus

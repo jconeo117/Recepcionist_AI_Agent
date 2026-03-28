@@ -1,5 +1,8 @@
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Adapters;
+using ReceptionistAgent.Core.Session;
+using ReceptionistAgent.Core.Security;
+using System.Text.Json;
 
 namespace ReceptionistAgent.Core.Services;
 
@@ -7,11 +10,13 @@ public class BookingService : IBookingService
 {
     private readonly IClientDataAdapter _adapter;
     private readonly TenantContext _tenantContext;
+    private readonly IAuditLogger _auditLogger;
 
-    public BookingService(IClientDataAdapter adapter, TenantContext tenantContext)
+    public BookingService(IClientDataAdapter adapter, TenantContext tenantContext, IAuditLogger auditLogger)
     {
         _adapter = adapter;
         _tenantContext = tenantContext;
+        _auditLogger = auditLogger;
     }
 
     public async Task<List<TimeSlot>> GetAvailableSlotsAsync(string providerId, DateTime date)
@@ -48,7 +53,8 @@ public class BookingService : IBookingService
         string providerId,
         DateTime date,
         TimeSpan time,
-        Dictionary<string, object>? customFields = null)
+        Dictionary<string, object>? customFields = null,
+        string? idempotencyKey = null)
     {
         if (await _adapter.ExistsAsync(date, time, providerId))
         {
@@ -78,10 +84,22 @@ public class BookingService : IBookingService
             ScheduledDate = date,
             ScheduledTime = time,
             Status = BookingStatus.Confirmed,
+            IdempotencyKey = idempotencyKey,
             CustomFields = customFields ?? new Dictionary<string, object>()
         };
 
-        return await _adapter.CreateBookingAsync(booking);
+        var created = await _adapter.CreateBookingAsync(booking);
+
+        // --- OUTBOX PATTERN ---
+        await _adapter.AddOutboxEventAsync(new OutboxEvent
+        {
+            TenantId = _tenantContext.CurrentTenant?.TenantId ?? "unknown",
+            EventType = "BookingCreated",
+            PayloadJson = JsonSerializer.Serialize(created),
+            CreatedAt = DateTime.UtcNow
+        });
+
+        return created;
     }
 
     public async Task<bool> CancelBookingAsync(string confirmationCode)
@@ -89,12 +107,58 @@ public class BookingService : IBookingService
         var booking = await _adapter.GetBookingByCodeAsync(confirmationCode);
         if (booking == null) return false;
         booking.Status = BookingStatus.Cancelled;
-        return await _adapter.UpdateBookingAsync(booking);
+        var success = await _adapter.UpdateBookingAsync(booking);
+
+        if (success)
+        {
+            await _auditLogger.LogAsync(new AuditEntry
+            {
+                TenantId = _tenantContext.CurrentTenant?.TenantId ?? "unknown",
+                EventType = "BookingCancelled",
+                Content = $"Reserva {confirmationCode} cancelada.",
+                Metadata = new Dictionary<string, string> { { "confirmationCode", confirmationCode } }
+            });
+
+            await _adapter.AddOutboxEventAsync(new OutboxEvent
+            {
+                TenantId = _tenantContext.CurrentTenant?.TenantId ?? "unknown",
+                EventType = "BookingCancelled",
+                PayloadJson = JsonSerializer.Serialize(booking),
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        return success;
+    }
+
+    public async Task<bool> DeleteBookingAsync(string id, string deletedBy = "system")
+    {
+        var success = await _adapter.DeleteBookingAsync(id, deletedBy);
+        if (success)
+        {
+            await _auditLogger.LogAsync(new AuditEntry
+            {
+                TenantId = _tenantContext.CurrentTenant?.TenantId ?? "unknown",
+                EventType = "BookingDeleted",
+                Content = $"Reserva {id} eliminada (soft-delete) por {deletedBy}.",
+                Metadata = new Dictionary<string, string> 
+                { 
+                    { "bookingId", id },
+                    { "deletedBy", deletedBy }
+                }
+            });
+        }
+        return success;
     }
 
     public async Task<BookingRecord?> GetBookingAsync(string confirmationCode)
     {
         return await _adapter.GetBookingByCodeAsync(confirmationCode);
+    }
+
+    public async Task<BookingRecord?> GetBookingByIdempotencyKeyAsync(string key)
+    {
+        return await _adapter.GetBookingByIdempotencyKeyAsync(key);
     }
 
     public async Task<List<BookingRecord>> GetBookingsByDateAsync(DateTime date)

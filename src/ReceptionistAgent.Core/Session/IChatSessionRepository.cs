@@ -11,4 +11,7 @@ public interface IChatSessionRepository
     // Feature: Human Escalation
     Task SetNeedsHumanAttentionAsync(Guid sessionId, string tenantId, bool needsAttention);
     Task<List<ChatSessionDto>> GetActiveSessionsAsync(string tenantId);
+    
+    // Feature: Patient CRM Profile
+    Task<List<ChatSessionDto>> GetSessionsByPhoneAsync(string tenantId, string phone);
 }

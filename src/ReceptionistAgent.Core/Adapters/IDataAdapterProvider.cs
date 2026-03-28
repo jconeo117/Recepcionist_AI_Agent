@@ -24,7 +24,7 @@ public interface IDataAdapterProvider
     /// <summary>
     /// Crea el repositorio de sesiones de chat.
     /// </summary>
-    IChatSessionRepository CreateChatSessionRepository(string coreConnectionString, string? tenantConnectionString);
+    IChatSessionRepository CreateChatSessionRepository(string coreConnectionString, string? tenantConnectionString, ILoggerFactory loggerFactory);
 
     /// <summary>
     /// Crea el servicio de recordatorios.

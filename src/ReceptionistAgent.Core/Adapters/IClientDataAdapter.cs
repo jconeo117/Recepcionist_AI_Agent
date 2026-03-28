@@ -12,11 +12,13 @@ public interface IClientDataAdapter
     // === Bookings ===
     Task<BookingRecord> CreateBookingAsync(BookingRecord booking);
     Task<BookingRecord?> GetBookingByCodeAsync(string confirmationCode);
+    Task<BookingRecord?> GetBookingByIdempotencyKeyAsync(string key);
     Task<List<BookingRecord>> GetBookingsByDateAsync(DateTime date);
     Task<List<BookingRecord>> GetAllBookingsAsync();
     Task<bool> UpdateBookingAsync(BookingRecord booking);
-    Task<bool> DeleteBookingAsync(string id);
+    Task<bool> DeleteBookingAsync(string id, string deletedBy = "system");
     Task<bool> ExistsAsync(DateTime date, TimeSpan time, string providerId);
+    Task<BookingStats> GetBookingStatsAsync();
 
     // === Client Lookups ===
     Task<BookingRecord?> GetBookingByClientIdAsync(string clientId);
@@ -25,4 +27,13 @@ public interface IClientDataAdapter
     // === Service Providers ===
     Task<List<ServiceProvider>> GetAllProvidersAsync();
     Task<List<ServiceProvider>> SearchProvidersAsync(string query);
+    Task<bool> AddProviderAsync(ServiceProvider provider);
+    Task<bool> UpdateProviderAsync(ServiceProvider provider);
+    Task<bool> DeleteProviderAsync(string id);
+    Task<int> GetProviderCountAsync();
+
+    // === Outbox ===
+    Task AddOutboxEventAsync(OutboxEvent @event);
+    Task<List<OutboxEvent>> GetUnprocessedOutboxEventsAsync(int limit = 10);
+    Task UpdateOutboxStatusAsync(Guid id, bool success, string? error = null);
 }
