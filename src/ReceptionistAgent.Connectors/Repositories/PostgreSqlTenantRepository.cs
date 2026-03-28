@@ -20,7 +20,7 @@ public class PostgreSqlTenantRepository : ITenantResolver
         if (string.IsNullOrWhiteSpace(tenantId))
             return null;
 
-        const string tenantSql = "SELECT tenant_id AS \"TenantId\", business_name AS \"BusinessName\", business_type AS \"BusinessType\", db_type AS \"DbType\", connection_string AS \"ConnectionString\", time_zone_id AS \"TimeZoneId\", phone_country_code AS \"PhoneCountryCode\", address AS \"Address\", phone AS \"Phone\", working_hours AS \"WorkingHours\", services AS \"Services\", accepted_insurance AS \"AcceptedInsurance\", pricing AS \"Pricing\", custom_settings AS \"CustomSettings\", username AS \"Username\", password_hash AS \"PasswordHash\", message_provider AS \"MessageProvider\", message_provider_account AS \"MessageProviderAccount\", message_provider_token AS \"MessageProviderToken\", message_provider_phone AS \"MessageProviderPhone\", is_active AS \"IsActive\", created_at AS \"CreatedAt\", updated_at AS \"UpdatedAt\" FROM tenants WHERE tenant_id = @TenantId AND is_active = TRUE";
+        const string tenantSql = "SELECT tenant_id AS \"TenantId\", business_name AS \"BusinessName\", business_type AS \"BusinessType\", db_type AS \"DbType\", connection_string AS \"ConnectionString\", time_zone_id AS \"TimeZoneId\", phone_country_code AS \"PhoneCountryCode\", address AS \"Address\", phone AS \"Phone\", working_hours AS \"WorkingHours\", services AS \"Services\", accepted_insurance AS \"AcceptedInsurance\", pricing AS \"Pricing\", custom_settings AS \"CustomSettings\", username AS \"Username\", password_hash AS \"PasswordHash\", message_provider AS \"MessageProvider\", message_provider_account AS \"MessageProviderAccount\", message_provider_token AS \"MessageProviderToken\", message_provider_phone AS \"MessageProviderPhone\", webhook_url AS \"WebhookUrl\", booking_requirements_json AS \"BookingRequirementsJson\", service_modality AS \"ServiceModality\", is_active AS \"IsActive\", created_at AS \"CreatedAt\", updated_at AS \"UpdatedAt\" FROM tenants WHERE tenant_id = @TenantId AND is_active = TRUE";
 
         using var connection = new NpgsqlConnection(_connectionString);
         var entity = await connection.QuerySingleOrDefaultAsync<TenantEntity>(tenantSql, new { TenantId = tenantId });
@@ -36,7 +36,7 @@ public class PostgreSqlTenantRepository : ITenantResolver
         if (string.IsNullOrWhiteSpace(phoneNumberId)) return null;
 
         const string tenantSql = @"
-            SELECT tenant_id AS ""TenantId"", business_name AS ""BusinessName"", business_type AS ""BusinessType"", db_type AS ""DbType"", connection_string AS ""ConnectionString"", time_zone_id AS ""TimeZoneId"", phone_country_code AS ""PhoneCountryCode"", address AS ""Address"", phone AS ""Phone"", working_hours AS ""WorkingHours"", services AS ""Services"", accepted_insurance AS ""AcceptedInsurance"", pricing AS ""Pricing"", custom_settings AS ""CustomSettings"", username AS ""Username"", password_hash AS ""PasswordHash"", message_provider AS ""MessageProvider"", message_provider_account AS ""MessageProviderAccount"", message_provider_token AS ""MessageProviderToken"", message_provider_phone AS ""MessageProviderPhone"", is_active AS ""IsActive"", created_at AS ""CreatedAt"", updated_at AS ""UpdatedAt""
+            SELECT tenant_id AS ""TenantId"", business_name AS ""BusinessName"", business_type AS ""BusinessType"", db_type AS ""DbType"", connection_string AS ""ConnectionString"", time_zone_id AS ""TimeZoneId"", phone_country_code AS ""PhoneCountryCode"", address AS ""Address"", phone AS ""Phone"", working_hours AS ""WorkingHours"", services AS ""Services"", accepted_insurance AS ""AcceptedInsurance"", pricing AS ""Pricing"", custom_settings AS ""CustomSettings"", username AS ""Username"", password_hash AS ""PasswordHash"", message_provider AS ""MessageProvider"", message_provider_account AS ""MessageProviderAccount"", message_provider_token AS ""MessageProviderToken"", message_provider_phone AS ""MessageProviderPhone"", webhook_url AS ""WebhookUrl"", booking_requirements_json AS ""BookingRequirementsJson"", service_modality AS ""ServiceModality"", is_active AS ""IsActive"", created_at AS ""CreatedAt"", updated_at AS ""UpdatedAt""
             FROM tenants
             WHERE message_provider_account = @PhoneNumberId
               AND message_provider = 'Meta'
@@ -62,7 +62,7 @@ public class PostgreSqlTenantRepository : ITenantResolver
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return null;
 
-        const string tenantSql = "SELECT tenant_id AS \"TenantId\", business_name AS \"BusinessName\", business_type AS \"BusinessType\", db_type AS \"DbType\", connection_string AS \"ConnectionString\", time_zone_id AS \"TimeZoneId\", phone_country_code AS \"PhoneCountryCode\", address AS \"Address\", phone AS \"Phone\", working_hours AS \"WorkingHours\", services AS \"Services\", accepted_insurance AS \"AcceptedInsurance\", pricing AS \"Pricing\", custom_settings AS \"CustomSettings\", username AS \"Username\", password_hash AS \"PasswordHash\", message_provider AS \"MessageProvider\", message_provider_account AS \"MessageProviderAccount\", message_provider_token AS \"MessageProviderToken\", message_provider_phone AS \"MessageProviderPhone\", is_active AS \"IsActive\", created_at AS \"CreatedAt\", updated_at AS \"UpdatedAt\" FROM tenants WHERE username = @Username AND password_hash = @PasswordHash AND is_active = TRUE";
+        const string tenantSql = "SELECT tenant_id AS \"TenantId\", business_name AS \"BusinessName\", business_type AS \"BusinessType\", db_type AS \"DbType\", connection_string AS \"ConnectionString\", time_zone_id AS \"TimeZoneId\", phone_country_code AS \"PhoneCountryCode\", address AS \"Address\", phone AS \"Phone\", working_hours AS \"WorkingHours\", services AS \"Services\", accepted_insurance AS \"AcceptedInsurance\", pricing AS \"Pricing\", custom_settings AS \"CustomSettings\", username AS \"Username\", password_hash AS \"PasswordHash\", message_provider AS \"MessageProvider\", message_provider_account AS \"MessageProviderAccount\", message_provider_token AS \"MessageProviderToken\", message_provider_phone AS \"MessageProviderPhone\", webhook_url AS \"WebhookUrl\", booking_requirements_json AS \"BookingRequirementsJson\", service_modality AS \"ServiceModality\", is_active AS \"IsActive\", created_at AS \"CreatedAt\", updated_at AS \"UpdatedAt\" FROM tenants WHERE username = @Username AND password_hash = @PasswordHash AND is_active = TRUE";
 
         using var connection = new NpgsqlConnection(_connectionString);
         var entity = await connection.QuerySingleOrDefaultAsync<TenantEntity>(tenantSql, new { Username = username, PasswordHash = password });
@@ -75,7 +75,7 @@ public class PostgreSqlTenantRepository : ITenantResolver
 
     public async Task<List<TenantConfiguration>> GetAllTenantsAsync()
     {
-        const string tenantSql = "SELECT tenant_id AS \"TenantId\", business_name AS \"BusinessName\", business_type AS \"BusinessType\", db_type AS \"DbType\", connection_string AS \"ConnectionString\", time_zone_id AS \"TimeZoneId\", phone_country_code AS \"PhoneCountryCode\", address AS \"Address\", phone AS \"Phone\", working_hours AS \"WorkingHours\", services AS \"Services\", accepted_insurance AS \"AcceptedInsurance\", pricing AS \"Pricing\", custom_settings AS \"CustomSettings\", username AS \"Username\", password_hash AS \"PasswordHash\", message_provider AS \"MessageProvider\", message_provider_account AS \"MessageProviderAccount\", message_provider_token AS \"MessageProviderToken\", message_provider_phone AS \"MessageProviderPhone\", is_active AS \"IsActive\", created_at AS \"CreatedAt\", updated_at AS \"UpdatedAt\" FROM tenants WHERE is_active = TRUE";
+        const string tenantSql = "SELECT tenant_id AS \"TenantId\", business_name AS \"BusinessName\", business_type AS \"BusinessType\", db_type AS \"DbType\", connection_string AS \"ConnectionString\", time_zone_id AS \"TimeZoneId\", phone_country_code AS \"PhoneCountryCode\", address AS \"Address\", phone AS \"Phone\", working_hours AS \"WorkingHours\", services AS \"Services\", accepted_insurance AS \"AcceptedInsurance\", pricing AS \"Pricing\", custom_settings AS \"CustomSettings\", username AS \"Username\", password_hash AS \"PasswordHash\", message_provider AS \"MessageProvider\", message_provider_account AS \"MessageProviderAccount\", message_provider_token AS \"MessageProviderToken\", message_provider_phone AS \"MessageProviderPhone\", webhook_url AS \"WebhookUrl\", booking_requirements_json AS \"BookingRequirementsJson\", service_modality AS \"ServiceModality\", is_active AS \"IsActive\", created_at AS \"CreatedAt\", updated_at AS \"UpdatedAt\" FROM tenants WHERE is_active = TRUE";
 
         using var connection = new NpgsqlConnection(_connectionString);
         var entities = (await connection.QueryAsync<TenantEntity>(tenantSql)).ToList();
@@ -96,6 +96,8 @@ public class PostgreSqlTenantRepository : ITenantResolver
                 services, accepted_insurance, pricing, custom_settings,
                 username, password_hash,
                 message_provider, message_provider_account, message_provider_token, message_provider_phone,
+                webhook_url,
+                booking_requirements_json, service_modality,
                 is_active, created_at, updated_at
             ) VALUES (
                 @TenantId, @BusinessName, @BusinessType, @DbType, @ConnectionString,
@@ -103,6 +105,8 @@ public class PostgreSqlTenantRepository : ITenantResolver
                 CAST(@Services AS jsonb), CAST(@AcceptedInsurance AS jsonb), CAST(@Pricing AS jsonb), CAST(@CustomSettings AS jsonb),
                 @Username, @PasswordHash,
                 @MessageProvider, @MessageProviderAccount, @MessageProviderToken, @MessageProviderPhone,
+                @WebhookUrl,
+                CAST(@BookingRequirementsJson AS jsonb), @ServiceModality,
                 @IsActive, @CreatedAt, @UpdatedAt
             )";
 
@@ -136,6 +140,9 @@ public class PostgreSqlTenantRepository : ITenantResolver
                 message_provider_account = @MessageProviderAccount,
                 message_provider_token   = @MessageProviderToken,
                 message_provider_phone   = @MessageProviderPhone,
+                webhook_url             = @WebhookUrl,
+                booking_requirements_json= CAST(@BookingRequirementsJson AS jsonb),
+                service_modality        = @ServiceModality,
                 is_active               = @IsActive,
                 updated_at              = @UpdatedAt
             WHERE tenant_id = @TenantId";
@@ -177,6 +184,9 @@ public class PostgreSqlTenantRepository : ITenantResolver
         t.MessageProviderAccount,
         t.MessageProviderToken,
         t.MessageProviderPhone,
+        t.WebhookUrl,
+        BookingRequirementsJson = JsonSerializer.Serialize(t.BookingRequirements),
+        ServiceModality = t.ServiceModality.ToString(),
         IsActive = t.IsActive,
         t.CreatedAt,
         UpdatedAt = DateTime.UtcNow
@@ -208,6 +218,9 @@ public class PostgreSqlTenantRepository : ITenantResolver
             MessageProviderAccount = entity.MessageProviderAccount ?? "",
             MessageProviderToken = entity.MessageProviderToken ?? "",
             MessageProviderPhone = entity.MessageProviderPhone ?? "",
+            WebhookUrl = entity.WebhookUrl,
+            BookingRequirements = DeserializeJson<BookingRequirements>(entity.BookingRequirementsJson) ?? BookingRequirementsFactory.CreateFor(entity.BusinessType),
+            ServiceModality = Enum.TryParse<ServiceModality>(entity.ServiceModality, out var mod) ? mod : BookingRequirementsFactory.ModalityFor(entity.BusinessType),
             IsActive = entity.IsActive,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
@@ -253,6 +266,9 @@ public class PostgreSqlTenantRepository : ITenantResolver
         public string? MessageProviderAccount { get; set; }
         public string? MessageProviderToken { get; set; }
         public string? MessageProviderPhone { get; set; }
+        public string? WebhookUrl { get; set; }
+        public string? BookingRequirementsJson { get; set; }
+        public string? ServiceModality { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

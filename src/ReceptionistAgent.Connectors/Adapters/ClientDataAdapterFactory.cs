@@ -58,4 +58,15 @@ public class ClientDataAdapterFactory
 
         return new InMemoryClientAdapter(providers);
     }
+
+    public IClientDataAdapter CreateAdapter(string connectionString, string dbType = "SqlServer")
+    {
+        var provider = _providers.FirstOrDefault(p => p.Supports(dbType));
+        if (provider != null)
+        {
+            return provider.CreateAdapter(connectionString, _backupService, _loggerFactory);
+        }
+
+        throw new NotSupportedException($"Database type '{dbType}' is not supported.");
+    }
 }

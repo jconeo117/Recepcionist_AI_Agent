@@ -21,9 +21,9 @@ public class PostgreSqlAdapterProvider : IDataAdapterProvider
         return new PostgreSqlClientDataAdapter(connectionString, backupService, logger);
     }
 
-    public IChatSessionRepository CreateChatSessionRepository(string coreConnectionString, string? tenantConnectionString)
+    public IChatSessionRepository CreateChatSessionRepository(string coreConnectionString, string? tenantConnectionString, ILoggerFactory loggerFactory)
     {
-        return new PostgreSqlChatSessionRepository(coreConnectionString, tenantConnectionString);
+        return new PostgreSqlChatSessionRepository(coreConnectionString, tenantConnectionString, loggerFactory);
     }
 
     public IReminderService CreateReminderService(string coreConnectionString, string? tenantConnectionString)

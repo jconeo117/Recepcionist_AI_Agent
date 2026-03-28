@@ -20,7 +20,17 @@ public class SqlTenantRepository : ITenantResolver
         if (string.IsNullOrWhiteSpace(tenantId))
             return null;
 
-        const string tenantSql = "SELECT * FROM Tenants WHERE TenantId = @TenantId AND IsActive = 1";
+        const string tenantSql = @"
+            SELECT
+                TenantId, BusinessName, BusinessType, DbType, ConnectionString,
+                TimeZoneId, PhoneCountryCode, Address, Phone, WorkingHours,
+                Services, AcceptedInsurance, Pricing, CustomSettings,
+                Username, PasswordHash,
+                MessageProvider, MessageProviderAccount, MessageProviderToken, MessageProviderPhone,
+                WebhookUrl,
+                BookingRequirementsJson, ServiceModality,
+                IsActive, CreatedAt, UpdatedAt
+            FROM Tenants WHERE TenantId = @TenantId AND IsActive = 1";
         const string providersSql = "SELECT * FROM TenantProviders WHERE TenantId = @TenantId AND IsActive = 1";
 
         using var connection = new SqlConnection(_connectionString);
@@ -43,7 +53,16 @@ public class SqlTenantRepository : ITenantResolver
         if (string.IsNullOrWhiteSpace(phoneNumberId)) return null;
 
         const string tenantSql = @"
-            SELECT * FROM Tenants
+            SELECT
+                TenantId, BusinessName, BusinessType, DbType, ConnectionString,
+                TimeZoneId, PhoneCountryCode, Address, Phone, WorkingHours,
+                Services, AcceptedInsurance, Pricing, CustomSettings,
+                Username, PasswordHash,
+                MessageProvider, MessageProviderAccount, MessageProviderToken, MessageProviderPhone,
+                WebhookUrl,
+                BookingRequirementsJson, ServiceModality,
+                IsActive, CreatedAt, UpdatedAt
+            FROM Tenants
             WHERE MessageProviderAccount = @PhoneNumberId
               AND MessageProvider = 'Meta'
               AND IsActive = 1";
@@ -74,7 +93,17 @@ public class SqlTenantRepository : ITenantResolver
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return null;
 
-        const string tenantSql = "SELECT * FROM Tenants WHERE Username = @Username AND PasswordHash = @PasswordHash AND IsActive = 1";
+        const string tenantSql = @"
+            SELECT
+                TenantId, BusinessName, BusinessType, DbType, ConnectionString,
+                TimeZoneId, PhoneCountryCode, Address, Phone, WorkingHours,
+                Services, AcceptedInsurance, Pricing, CustomSettings,
+                Username, PasswordHash,
+                MessageProvider, MessageProviderAccount, MessageProviderToken, MessageProviderPhone,
+                WebhookUrl,
+                BookingRequirementsJson, ServiceModality,
+                IsActive, CreatedAt, UpdatedAt
+            FROM Tenants WHERE Username = @Username AND PasswordHash = @PasswordHash AND IsActive = 1";
         const string providersSql = "SELECT * FROM TenantProviders WHERE TenantId = @TenantId AND IsActive = 1";
 
         using var connection = new SqlConnection(_connectionString);
@@ -93,7 +122,17 @@ public class SqlTenantRepository : ITenantResolver
 
     public async Task<List<TenantConfiguration>> GetAllTenantsAsync()
     {
-        const string tenantSql = "SELECT * FROM Tenants WHERE IsActive = 1";
+        const string tenantSql = @"
+            SELECT
+                TenantId, BusinessName, BusinessType, DbType, ConnectionString,
+                TimeZoneId, PhoneCountryCode, Address, Phone, WorkingHours,
+                Services, AcceptedInsurance, Pricing, CustomSettings,
+                Username, PasswordHash,
+                MessageProvider, MessageProviderAccount, MessageProviderToken, MessageProviderPhone,
+                WebhookUrl,
+                BookingRequirementsJson, ServiceModality,
+                IsActive, CreatedAt, UpdatedAt
+            FROM Tenants WHERE IsActive = 1";
         const string providersSql = "SELECT * FROM TenantProviders WHERE IsActive = 1";
 
         using var connection = new SqlConnection(_connectionString);
@@ -117,6 +156,8 @@ public class SqlTenantRepository : ITenantResolver
                 Services, AcceptedInsurance, Pricing, CustomSettings,
                 Username, PasswordHash,
                 MessageProvider, MessageProviderAccount, MessageProviderToken, MessageProviderPhone,
+                WebhookUrl,
+                BookingRequirementsJson, ServiceModality,
                 IsActive, CreatedAt
             ) VALUES (
                 @TenantId, @BusinessName, @BusinessType, @DbType, @ConnectionString,
@@ -124,6 +165,8 @@ public class SqlTenantRepository : ITenantResolver
                 @Services, @AcceptedInsurance, @Pricing, @CustomSettings,
                 @Username, @PasswordHash,
                 @MessageProvider, @MessageProviderAccount, @MessageProviderToken, @MessageProviderPhone,
+                @WebhookUrl,
+                @BookingRequirementsJson, @ServiceModality,
                 @IsActive, @CreatedAt
             )";
 
@@ -159,6 +202,9 @@ public class SqlTenantRepository : ITenantResolver
                 MessageProviderAccount = @MessageProviderAccount,
                 MessageProviderToken   = @MessageProviderToken,
                 MessageProviderPhone   = @MessageProviderPhone,
+                WebhookUrl             = @WebhookUrl,
+                BookingRequirementsJson= @BookingRequirementsJson,
+                ServiceModality        = @ServiceModality,
                 IsActive               = @IsActive,
                 UpdatedAt              = @UpdatedAt
             WHERE TenantId = @TenantId";
@@ -205,6 +251,9 @@ public class SqlTenantRepository : ITenantResolver
         t.MessageProviderAccount,
         t.MessageProviderToken,
         t.MessageProviderPhone,
+        t.WebhookUrl,
+        BookingRequirementsJson = JsonSerializer.Serialize(t.BookingRequirements),
+        ServiceModality = t.ServiceModality.ToString(),
         t.IsActive,
         t.CreatedAt,
         UpdatedAt = DateTime.UtcNow
@@ -253,6 +302,9 @@ public class SqlTenantRepository : ITenantResolver
             MessageProviderAccount = entity.MessageProviderAccount ?? "",
             MessageProviderToken = entity.MessageProviderToken ?? "",
             MessageProviderPhone = entity.MessageProviderPhone ?? "",
+            WebhookUrl = entity.WebhookUrl,
+            BookingRequirements = DeserializeJson<BookingRequirements>(entity.BookingRequirementsJson) ?? BookingRequirementsFactory.CreateFor(entity.BusinessType),
+            ServiceModality = Enum.TryParse<ServiceModality>(entity.ServiceModality, out var mod) ? mod : BookingRequirementsFactory.ModalityFor(entity.BusinessType),
             IsActive = entity.IsActive,
             CreatedAt = entity.CreatedAt,
             UpdatedAt = entity.UpdatedAt,
@@ -300,6 +352,9 @@ public class SqlTenantRepository : ITenantResolver
         public string? MessageProviderAccount { get; set; }
         public string? MessageProviderToken { get; set; }
         public string? MessageProviderPhone { get; set; }
+        public string? WebhookUrl { get; set; }
+        public string? BookingRequirementsJson { get; set; }
+        public string? ServiceModality { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

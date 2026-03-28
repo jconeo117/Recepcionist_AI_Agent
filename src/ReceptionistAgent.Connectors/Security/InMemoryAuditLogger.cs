@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using ReceptionistAgent.Core.Models;
+using ReceptionistAgent.Core.Security;
 
 namespace ReceptionistAgent.Connectors.Security;
 

@@ -27,12 +27,15 @@ public class InMemoryChatSessionRepository : IChatSessionRepository
             {
                 history.Remove(systemMsg);
             }
-            history.Insert(0, new ChatMessageContent(AuthorRole.System, systemPrompt));
+            if (!string.IsNullOrWhiteSpace(systemPrompt))
+            {
+                history.Insert(0, new ChatMessageContent(AuthorRole.System, systemPrompt));
+            }
 
             return Task.FromResult(history);
         }
 
-        var newHistory = new ChatHistory(systemPrompt);
+        var newHistory = string.IsNullOrWhiteSpace(systemPrompt) ? new ChatHistory() : new ChatHistory(systemPrompt);
         _sessions.TryAdd(sessionId, newHistory);
         return Task.FromResult(newHistory);
     }
@@ -63,6 +66,24 @@ public class InMemoryChatSessionRepository : IChatSessionRepository
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         }).ToList();
+
+        return Task.FromResult(active);
+    }
+
+    public Task<List<ReceptionistAgent.Core.Models.ChatSessionDto>> GetSessionsByPhoneAsync(string tenantId, string phone)
+    {
+        var active = _sessions
+            .Where(kvp => _phones.TryGetValue(kvp.Key, out var p) && p == phone)
+            .Select(kvp => new ReceptionistAgent.Core.Models.ChatSessionDto
+            {
+                Id = kvp.Key,
+                TenantId = tenantId,
+                UserPhone = phone,
+                NeedsHumanAttention = _flags.TryGetValue(kvp.Key, out var val) && val,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            })
+            .ToList();
 
         return Task.FromResult(active);
     }

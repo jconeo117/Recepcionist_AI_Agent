@@ -1,6 +1,7 @@
 using Dapper;
 using Microsoft.Data.SqlClient;
 using ReceptionistAgent.Core.Models;
+using ReceptionistAgent.Core.Security;
 using ReceptionistAgent.Connectors.Security;
 using System.Text.Json;
 

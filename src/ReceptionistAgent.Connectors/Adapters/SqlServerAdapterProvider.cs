@@ -21,7 +21,7 @@ public class SqlServerAdapterProvider : IDataAdapterProvider
         return new SqlClientDataAdapter(connectionString, backupService, logger);
     }
 
-    public IChatSessionRepository CreateChatSessionRepository(string coreConnectionString, string? tenantConnectionString)
+    public IChatSessionRepository CreateChatSessionRepository(string coreConnectionString, string? tenantConnectionString, ILoggerFactory loggerFactory)
     {
         return new SqlChatSessionRepository(coreConnectionString, tenantConnectionString);
     }
