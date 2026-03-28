@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
+import axios from 'axios';
 import { 
   Inbox, 
   Calendar, 
@@ -12,9 +13,26 @@ import { useAuth } from '../context/AuthContext';
 
 const Sidebar = () => {
   const { logout, businessName } = useAuth();
+  const [needsAttention, setNeedsAttention] = useState(0);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await axios.get('/api/dashboard/stats');
+        setNeedsAttention(res.data.needsAttention || 0);
+      } catch (err) {
+        // Silently fail for sidebar stats 
+      }
+    };
+    fetchStats();
+    
+    // Refresh stats every 30 seconds for the badge
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const navItems = [
-    { name: 'Inbox', path: '/inbox', icon: Inbox, badge: 4 },
+    { name: 'Inbox', path: '/inbox', icon: Inbox, badge: needsAttention },
     { name: 'Reservas', path: '/bookings', icon: Calendar },
     { name: 'Proveedores', path: '/providers', icon: Users },
     { name: 'Base de datos', path: '/database', icon: Database },
