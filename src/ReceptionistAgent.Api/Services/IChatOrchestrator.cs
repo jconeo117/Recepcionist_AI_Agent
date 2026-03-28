@@ -19,5 +19,6 @@ public interface IChatOrchestrator
         Guid sessionId,
         string tenantId,
         string eventTypePrefix,
-        Dictionary<string, string>? additionalMetadata = null);
+        Dictionary<string, string>? additionalMetadata = null,
+        string? messageId = null);
 }

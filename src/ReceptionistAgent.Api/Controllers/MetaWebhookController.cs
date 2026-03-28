@@ -8,6 +8,7 @@ using ReceptionistAgent.Connectors.Repositories;
 using ReceptionistAgent.Core.Services;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Tenant;
+using ReceptionistAgent.Core.Utils;
 
 namespace ReceptionistAgent.Api.Controllers;
 
@@ -55,14 +56,16 @@ public class MetaWebhookController : ControllerBase
     /// Meta espera un 200 OK inmediato — el procesamiento ocurre en background.
     /// </summary>
     [HttpPost]
-    public async Task<IActionResult> ReceiveMessage([FromBody] JsonElement body)
+    public IActionResult ReceiveMessage([FromBody] JsonElement body)
     {
         try
         {
             if (body.TryGetProperty("object", out var objProp) &&
                 objProp.GetString() == "whatsapp_business_account")
             {
-                await ProcessPayloadAsync(body);
+                // Meta expects a 200 OK within 10 seconds.
+                // We fire and forget the processing logic to avoid timeouts and retries.
+                _ = Task.Run(async () => await ProcessPayloadAsync(body)); 
                 return Ok();
             }
 
@@ -100,6 +103,7 @@ public class MetaWebhookController : ControllerBase
                         if (!message.TryGetProperty("type", out var typeProp) ||
                             typeProp.GetString() != "text") continue;
 
+                        var messageId = message.GetProperty("id").GetString();
                         var fromPhone = message.GetProperty("from").GetString();
                         var text = message.GetProperty("text").GetProperty("body").GetString();
 
@@ -108,10 +112,10 @@ public class MetaWebhookController : ControllerBase
                             string.IsNullOrEmpty(phoneNumberId)) continue;
 
                         _logger.LogInformation(
-                            "Meta message from {From} via PhoneId {PhoneId}: {Text}",
-                            fromPhone, phoneNumberId, text);
+                            "Meta message {MsgId} from {From} via PhoneId {PhoneId}: {Text}",
+                            messageId, fromPhone, phoneNumberId, text);
 
-                        await OrchestrateAsync(fromPhone, text, phoneNumberId);
+                        await OrchestrateAsync(fromPhone, text, phoneNumberId, messageId);
                     }
                 }
             }
@@ -122,7 +126,7 @@ public class MetaWebhookController : ControllerBase
         }
     }
 
-    private async Task OrchestrateAsync(string fromPhone, string text, string phoneNumberId)
+    private async Task OrchestrateAsync(string fromPhone, string text, string phoneNumberId, string? messageId = null)
     {
         using var scope = _scopeFactory.CreateScope();
 
@@ -159,14 +163,20 @@ public class MetaWebhookController : ControllerBase
         var messageFactory = scope.ServiceProvider.GetRequiredService<IMessageSenderFactory>();
 
         var sessionId = GenerateSessionId(tenantConfig.TenantId, fromPhone);
-        var metadata = new Dictionary<string, string> { { "phone", fromPhone } };
+        var clientTimeZone = TimeZoneHelper.InferTimeZoneFromPhone(fromPhone, tenantConfig.TimeZoneId ?? "UTC");
+        var metadata = new Dictionary<string, string>
+        {
+            { "phone", fromPhone },
+            { "clientTimeZone", clientTimeZone }
+        };
 
         var result = await orchestrator.ProcessMessageAsync(
             message: text,
             sessionId: sessionId,
             tenantId: tenantConfig.TenantId,
             eventTypePrefix: "Meta",
-            additionalMetadata: metadata);
+            additionalMetadata: metadata,
+            messageId: messageId);
 
         var sender = messageFactory.CreateSender(tenantConfig);
         await sender.SendAsync(fromPhone, result.Response);

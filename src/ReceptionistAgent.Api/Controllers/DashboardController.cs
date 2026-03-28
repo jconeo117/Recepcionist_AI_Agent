@@ -8,6 +8,8 @@ using ReceptionistAgent.Core.Tenant;
 using ReceptionistAgent.Connectors.Adapters;
 using Microsoft.AspNetCore.SignalR;
 using System.Security.Claims;
+using Dapper;
+using ReceptionistAgent.Core.Repositories;
 
 namespace ReceptionistAgent.Api.Controllers;
 
@@ -17,46 +19,20 @@ namespace ReceptionistAgent.Api.Controllers;
 public class DashboardController : ControllerBase
 {
     private readonly IChatSessionRepository _sessionRepository;
-    private readonly IMessageSenderFactory _messageSenderFactory;
     private readonly ITenantResolver _tenantResolver;
     private readonly ClientDataAdapterFactory _adapterFactory;
-    private readonly Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> _hubContext;
+    private readonly IDatabaseAdminRepository _dbAdminRepository;
 
     public DashboardController(
         IChatSessionRepository sessionRepository,
-        IMessageSenderFactory messageSenderFactory,
         ITenantResolver tenantResolver,
         ClientDataAdapterFactory adapterFactory,
-        Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> hubContext)
+        IDatabaseAdminRepository dbAdminRepository)
     {
         _sessionRepository = sessionRepository;
-        _messageSenderFactory = messageSenderFactory;
         _tenantResolver = tenantResolver;
         _adapterFactory = adapterFactory;
-        _hubContext = hubContext;
-    }
-
-    [HttpGet("sessions")]
-    public async Task<IActionResult> GetSessions()
-    {
-        var tenantId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
-
-        var sessions = await _sessionRepository.GetActiveSessionsAsync(tenantId);
-        return Ok(sessions);
-    }
-
-    [HttpGet("sessions/{sessionId}/history")]
-    public async Task<IActionResult> GetSessionHistory(Guid sessionId)
-    {
-        var tenantId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
-
-        // Pass empty string for systemPrompt to retrieve existing history
-        var history = await _sessionRepository.GetChatHistoryAsync(sessionId, tenantId, "");
-        var formattedHistory = history.Select(m => new { Role = m.Role.ToString(), Content = m.Content });
-
-        return Ok(formattedHistory);
+        _dbAdminRepository = dbAdminRepository;
     }
 
     [HttpGet("stats")]
@@ -69,22 +45,22 @@ public class DashboardController : ControllerBase
         if (tenant == null) return NotFound();
 
         var adapter = _adapterFactory.CreateAdapter(tenant);
-        var bookings = await adapter.GetAllBookingsAsync();
-        var providers = await adapter.GetAllProvidersAsync();
+        var bookingStats = await adapter.GetBookingStatsAsync();
+        var providerCount = await adapter.GetProviderCountAsync();
         var activeSessions = await _sessionRepository.GetActiveSessionsAsync(tenantId);
 
         return Ok(new
         {
-            TotalBookings = bookings.Count,
-            PendingBookings = bookings.Count(b => b.Status == Core.Models.BookingStatus.Scheduled),
-            ProviderCount = providers.Count,
+            TotalBookings = bookingStats.TotalBookings,
+            PendingBookings = bookingStats.ScheduledCount,
+            ProviderCount = providerCount,
             ActiveSessions = activeSessions.Count,
             NeedsAttention = activeSessions.Count(s => s.NeedsHumanAttention)
         });
     }
 
-    [HttpGet("bookings")]
-    public async Task<IActionResult> GetBookings()
+    [HttpGet("database/{tableName}")]
+    public async Task<IActionResult> GetDatabaseTable(string tableName)
     {
         var tenantId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
@@ -93,62 +69,85 @@ public class DashboardController : ControllerBase
         if (tenant == null) return NotFound();
 
         var adapter = _adapterFactory.CreateAdapter(tenant);
-        var bookings = await adapter.GetAllBookingsAsync();
-        return Ok(bookings.OrderByDescending(b => b.ScheduledDate).ThenByDescending(b => b.ScheduledTime));
-    }
-
-    [HttpGet("providers")]
-    public async Task<IActionResult> GetProviders()
-    {
-        var tenantId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
-
-        var tenant = await _tenantResolver.ResolveAsync(tenantId);
-        if (tenant == null) return NotFound();
-
-        var adapter = _adapterFactory.CreateAdapter(tenant);
-        var providers = await adapter.GetAllProvidersAsync();
-        return Ok(providers);
-    }
-
-    [HttpPost("sessions/{sessionId}/reply")]
-    public async Task<IActionResult> ReplyToSession(Guid sessionId, [FromBody] ReplyRequest request)
-    {
-        var tenantId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
-
-        if (string.IsNullOrWhiteSpace(request.Message))
-            return BadRequest("Message is required.");
-
-        var activeSessions = await _sessionRepository.GetActiveSessionsAsync(tenantId);
-        var session = activeSessions.FirstOrDefault(s => s.Id == sessionId);
-
-        if (session == null || string.IsNullOrEmpty(session.UserPhone))
-            return NotFound("Session or UserPhone not found.");
-
-        // Read history and append human reply so the AI knows what was said
-        var history = await _sessionRepository.GetChatHistoryAsync(sessionId, tenantId, "");
-        history.AddMessage(AuthorRole.Assistant, $"[Agente Humano]: {request.Message}");
-        await _sessionRepository.UpdateChatHistoryAsync(sessionId, tenantId, history);
-
-        // Clear NeedsHumanAttention flag since a human replied
-        await _sessionRepository.SetNeedsHumanAttentionAsync(sessionId, tenantId, false);
-
-        // Send the message via WhatsApp/Twilio
-        var sender = await _messageSenderFactory.CreateSenderAsync(tenantId);
-        await sender.SendAsync(session.UserPhone, request.Message);
-
-        // Broadcast real-time update to the Client Dashboard via SignalR WebSockets
-        if (_hubContext != null)
+        
+        if (tableName.Equals("bookings", StringComparison.OrdinalIgnoreCase))
         {
-            await _hubContext.Clients.Group(tenantId).SendAsync("ReceiveSessionUpdate");
+            var data = await adapter.GetAllBookingsAsync();
+            return Ok(data.OrderByDescending(b => b.CreatedAt).Take(50));
+        }
+        
+        if (tableName.Equals("providers", StringComparison.OrdinalIgnoreCase))
+        {
+            var data = await adapter.GetAllProvidersAsync();
+            return Ok(data);
         }
 
-        return Ok(new { success = true });
+        if (tableName.Equals("clients", StringComparison.OrdinalIgnoreCase))
+        {
+            var bookings = await adapter.GetAllBookingsAsync();
+            var clients = bookings
+                .Where(b => b.ClientName != null)
+                .GroupBy(b => b.ClientName)
+                .Select(g => new { 
+                    Name = g.Key, 
+                    LastBooking = g.Max(b => b.ScheduledDate),
+                    TotalBookings = g.Count()
+                })
+                .OrderByDescending(c => c.LastBooking)
+                .Take(50);
+            return Ok(clients);
+        }
+
+        if (tableName.Equals("messages", StringComparison.OrdinalIgnoreCase))
+        {
+            // Inbox compatible sessions view
+            var sessions = await _sessionRepository.GetActiveSessionsAsync(tenantId);
+            return Ok(sessions.Select(s => new {
+                s.Id,
+                s.UserPhone,
+                s.UpdatedAt,
+                s.NeedsHumanAttention
+            }).OrderByDescending(s => s.UpdatedAt).Take(50));
+        }
+
+        if (tableName.Equals("chat_messages", StringComparison.OrdinalIgnoreCase))
+        {
+            // Raw relational messages table using Admin Repos (Clean Architecture)
+            var messages = await _dbAdminRepository.GetRecentChatMessagesAsync(tenant, 50);
+            return Ok(messages);
+        }
+
+        if (tableName.Equals("services", StringComparison.OrdinalIgnoreCase))
+        {
+            return Ok(tenant.Services.Select(s => new { Service = s }));
+        }
+
+        return BadRequest(new { error = $"La tabla '{tableName}' no está disponible para visualización dinámica o aún no tiene una implementación de mapeo." });
     }
 
-    public class ReplyRequest
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings()
     {
-        public string Message { get; set; } = string.Empty;
+        var tenantId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(tenantId)) return Unauthorized();
+
+        var tenant = await _tenantResolver.ResolveAsync(tenantId);
+        if (tenant == null) return NotFound();
+
+        return Ok(new {
+            tenant.TenantId,
+            tenant.BusinessName,
+            tenant.BusinessType,
+            tenant.TimeZoneId,
+            tenant.Address,
+            tenant.Phone,
+            tenant.WorkingHours,
+            ServiceModality = tenant.ServiceModality.ToString(),
+            BookingRequirements = new {
+                tenant.BookingRequirements.RequiresEmail,
+                tenant.BookingRequirements.RequiresBirthDate,
+                tenant.BookingRequirements.RequiresInsurance
+            }
+        });
     }
 }

@@ -4,6 +4,7 @@ using ReceptionistAgent.Api.Security;
 using ReceptionistAgent.Core.Models;
 using ReceptionistAgent.Core.Services;
 using ReceptionistAgent.Core.Tenant;
+using ReceptionistAgent.Connectors.Adapters;
 
 namespace ReceptionistAgent.Api.Controllers;
 
@@ -20,15 +21,18 @@ public class TenantAdminController : ControllerBase
     private readonly ITenantResolver _tenantResolver;
     private readonly IBillingService _billingService;
     private readonly Connectors.Services.TenantDbInitializer _dbInitializer;
+    private readonly ClientDataAdapterFactory _adapterFactory;
 
     public TenantAdminController(
         ITenantResolver tenantResolver, 
         IBillingService billingService,
-        Connectors.Services.TenantDbInitializer dbInitializer)
+        Connectors.Services.TenantDbInitializer dbInitializer,
+        ClientDataAdapterFactory adapterFactory)
     {
         _tenantResolver = tenantResolver;
         _billingService = billingService;
         _dbInitializer = dbInitializer;
+        _adapterFactory = adapterFactory;
     }
 
     // ═══ Tenant CRUD ═══
@@ -48,6 +52,31 @@ public class TenantAdminController : ControllerBase
             return NotFound(new { error = $"Tenant '{tenantId}' no encontrado." });
 
         var billing = await _billingService.GetBillingAsync(tenantId);
+
+        // Fetch live providers dynamically from the tenant's specific database instead of outdated core JSON
+        if (tenant.DbType != "InMemory" && !string.IsNullOrWhiteSpace(tenant.ConnectionString))
+        {
+            try 
+            {
+                var adapter = _adapterFactory.CreateAdapter(tenant);
+                var liveProviders = await adapter.GetAllProvidersAsync();
+                tenant.Providers = liveProviders.Select(p => new TenantProviderConfig
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    Role = p.Role,
+                    StartTime = p.StartTime.ToString(@"hh\:mm"),
+                    EndTime = p.EndTime.ToString(@"hh\:mm"),
+                    SlotDurationMinutes = p.SlotDurationMinutes
+                }).ToList();
+            } 
+            catch (Exception) 
+            {
+                // Fallback to empty or existing if DB is unreachable, so it doesn't break the whole admin panel
+                tenant.Providers = new List<TenantProviderConfig>();
+            }
+        }
+
         return Ok(new { tenant, billing });
     }
 
@@ -60,6 +89,19 @@ public class TenantAdminController : ControllerBase
         var existing = await _tenantResolver.ResolveAsync(tenant.TenantId);
         if (existing != null)
             return Conflict(new { error = $"Tenant '{tenant.TenantId}' ya existe." });
+
+        // Aplicar defaults si el frontend no los envío
+        if (tenant.BookingRequirements == null)
+        {
+            tenant.BookingRequirements = BookingRequirementsFactory.CreateFor(tenant.BusinessType);
+        }
+
+        if (tenant.ServiceModality == ServiceModality.InPerson)
+        {
+            // Solo sobreescribir si no fue explícitamente seteado por el admin,
+            // usando un default inteligente según el tipo de negocio.
+            tenant.ServiceModality = BookingRequirementsFactory.ModalityFor(tenant.BusinessType);
+        }
 
         tenant.CreatedAt = DateTime.UtcNow;
         tenant.IsActive = true;

@@ -14,11 +14,13 @@ public class TenantAuthController : ControllerBase
 {
     private readonly ITenantResolver _tenantResolver;
     private readonly IConfiguration _config;
+    private readonly IWebHostEnvironment _env;
 
-    public TenantAuthController(ITenantResolver tenantResolver, IConfiguration config)
+    public TenantAuthController(ITenantResolver tenantResolver, IConfiguration config, IWebHostEnvironment env)
     {
         _tenantResolver = tenantResolver;
         _config = config;
+        _env = env;
     }
 
     [HttpPost("login")]
@@ -31,7 +33,8 @@ public class TenantAuthController : ControllerBase
         if (tenant == null)
             return Unauthorized("Invalid username or password.");
 
-        var secretKey = _config["Jwt:Key"] ?? "SUPER_SECRET_JWT_KEY_CHANGE_ME_IN_PRODUCTION!!!!";
+        var secretKey = _config["Jwt:Key"]
+            ?? throw new InvalidOperationException("La configuración 'Jwt:Key' es requerida.");
         var issuer = _config["Jwt:Issuer"] ?? "ReceptionistAI";
         var audience = _config["Jwt:Audience"] ?? "ReceptionistAI_ClientDashboard";
 
@@ -54,12 +57,28 @@ public class TenantAuthController : ControllerBase
         var token = tokenHandler.CreateToken(tokenDescriptor);
         var tokenString = tokenHandler.WriteToken(token);
 
+        // Emit httpOnly secure cookie
+        Response.Cookies.Append("auth_token", tokenString, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = !_env.IsDevelopment(),
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTimeOffset.UtcNow.AddDays(7),
+            Path = "/"
+        });
+
         return Ok(new
         {
-            Token = tokenString,
             TenantId = tenant.TenantId,
             BusinessName = tenant.BusinessName
         });
+    }
+
+    [HttpPost("logout")]
+    public IActionResult Logout()
+    {
+        Response.Cookies.Delete("auth_token");
+        return Ok(new { success = true });
     }
 
     public class LoginRequest

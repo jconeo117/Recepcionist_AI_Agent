@@ -11,6 +11,8 @@ using ReceptionistAgent.Connectors.Security;
 using ReceptionistAgent.Connectors.Services;
 using ReceptionistAgent.Connectors.Messaging;
 using ReceptionistAgent.Api.Security;
+using ReceptionistAgent.Api.Workers;
+using ReceptionistAgent.Api.Health;
 using ReceptionistAgent.Core.Security;
 using ReceptionistAgent.Core.Services;
 using ReceptionistAgent.Api.Services;
@@ -31,7 +33,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        var secretKey = builder.Configuration["Jwt:Key"] ?? "SUPER_SECRET_JWT_KEY_CHANGE_ME_IN_PRODUCTION!!!!";
+        var secretKey = builder.Configuration["Jwt:Key"] 
+            ?? throw new InvalidOperationException(
+                "La configuración 'Jwt:Key' no está definida. " +
+                "Ejecute: dotnet user-secrets set \"Jwt:Key\" \"<clave-segura>\" " +
+                "o defina la variable de entorno Jwt__Key en producción.");
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -47,12 +53,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         {
             OnMessageReceived = context =>
             {
+                // SignalR: leer desde query string para hubs
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
                 if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/dashboard"))
                 {
                     context.Token = accessToken;
+                    return Task.CompletedTask;
                 }
+
+                // Dashboard: leer desde httpOnly cookie 'auth_token'
+                if (context.Request.Cookies.TryGetValue("auth_token", out var cookieToken))
+                {
+                    context.Token = cookieToken;
+                }
+
                 return Task.CompletedTask;
             }
         };
@@ -63,16 +78,16 @@ builder.Services.AddControllers();
 builder.Services.AddMemoryCache();
 
 // --- CORS for Admin Panel ---
+var corsOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>()
+    ?? new[] { "http://localhost:5173", "http://localhost:5174", "http://localhost:4173" };
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AdminPanel", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:5173",  // Vite dev server (Admin Panel)
-                "http://127.0.0.1:5173",
-                "http://localhost:5174",  // Vite dev server (Client Dashboard)
-                "http://127.0.0.1:5174",
-                "http://localhost:4173")  // Vite preview
+        policy.WithOrigins(corsOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -124,54 +139,12 @@ else
     });
 }
 
-// --- Tenant Configuration ---
-// var tenantsConfig = new Dictionary<string, TenantConfiguration>(StringComparer.OrdinalIgnoreCase);
-// var tenantsSection = builder.Configuration.GetSection("Tenants");
-
-// foreach (var tenantSection in tenantsSection.GetChildren())
-// {
-//     var tenant = new TenantConfiguration
-//     {
-//         TenantId = tenantSection.Key,
-//         BusinessName = tenantSection["BusinessName"] ?? "",
-//         BusinessType = tenantSection["BusinessType"] ?? "",
-//         DbType = tenantSection["DbType"] ?? "InMemory",
-//         ConnectionString = tenantSection["ConnectionString"] ?? "",
-//         TimeZoneId = tenantSection["TimeZoneId"] ?? "UTC",
-//         Address = tenantSection["Address"] ?? "",
-//         Phone = tenantSection["Phone"] ?? "",
-//         WorkingHours = tenantSection["WorkingHours"] ?? "",
-//         Services = tenantSection.GetSection("Services").Get<List<string>>() ?? [],
-//         AcceptedInsurance = tenantSection.GetSection("AcceptedInsurance").Get<List<string>>() ?? [],
-//         Pricing = tenantSection.GetSection("Pricing").Get<Dictionary<string, string>>() ?? new()
-//     };
-
-//     // Cargar providers del tenant
-//     var providersSection = tenantSection.GetSection("Providers");
-//     foreach (var provSection in providersSection.GetChildren())
-//     {
-//         tenant.Providers.Add(new TenantProviderConfig
-//         {
-//             Id = provSection["Id"] ?? "",
-//             Name = provSection["Name"] ?? "",
-//             Role = provSection["Role"] ?? "",
-//             WorkingDays = provSection.GetSection("WorkingDays").Get<List<string>>() ?? [],
-//             StartTime = provSection["StartTime"] ?? "09:00",
-//             EndTime = provSection["EndTime"] ?? "18:00",
-//             SlotDurationMinutes = int.TryParse(provSection["SlotDurationMinutes"], out var dur) ? dur : 30
-//         });
-//     }
-
-//     tenantsConfig[tenant.TenantId] = tenant;
-// }
-
 // --- Application Core Services ---
 builder.Services.AddSingleton<IDataAdapterProvider, SqlServerAdapterProvider>();
 builder.Services.AddSingleton<IDataAdapterProvider, PostgreSqlAdapterProvider>();
 builder.Services.AddSingleton<ClientDataAdapterFactory>();
+builder.Services.AddSingleton<IDatabaseAdminRepository, DatabaseAdminRepository>();
 builder.Services.AddSingleton<IPromptBuilder, PromptBuilder>();
-//
-//var coreConnStr = builder.Configuration.GetConnectionString("AgentCore")!;
 builder.Services.AddScoped<IChatSessionRepository>(sp =>
 {
     var configuration = sp.GetRequiredService<IConfiguration>();
@@ -182,10 +155,12 @@ builder.Services.AddScoped<IChatSessionRepository>(sp =>
     var providers = sp.GetRequiredService<IEnumerable<IDataAdapterProvider>>();
 
     var provider = providers.FirstOrDefault(p => p.Supports(tenant?.DbType ?? "SqlServer"));
-    return provider!.CreateChatSessionRepository(coreConnStr, tenantConnStr);
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    return provider!.CreateChatSessionRepository(coreConnStr, tenantConnStr, loggerFactory);
 });
 
 // --- Security & Audit Services ---
+builder.Services.AddSingleton<ISessionBlacklistService, SessionBlacklistService>();
 builder.Services.AddSingleton<IInputGuard, PromptInjectionGuard>();
 builder.Services.AddSingleton<IOutputFilter, SensitiveDataFilter>();
 // --- Security, Audit, Billing, Backups ---
@@ -223,14 +198,23 @@ else
     builder.Services.AddSingleton<IMetricsRepository>(_ => new SqlMetricsRepository(coreConnStr));
 }
 
-// Register HTTP Client for Meta API
+// Register HTTP Client for Meta API and Webhooks
 builder.Services.AddHttpClient("MetaGraphApi");
+builder.Services.AddHttpClient("WebhookClient");
 
 // Register Factory for multi-tenant messaging (Twilio/Meta)
 builder.Services.AddSingleton<IMessageSenderFactory, MessageSenderFactory>();
+builder.Services.AddSingleton<IWebhookSenderService, WebhookSenderService>();
 
-// Background service for sending reminders
+// Background service for sending reminders and processing outbox
 builder.Services.AddHostedService<ReminderBackgroundService>();
+builder.Services.AddHostedService<OutboxWorker>();
+
+// Register Advanced Health Checks
+builder.Services.AddHealthChecks()
+    .AddCheck<AisServiceHealthCheck>("AI_Service")
+    .AddCheck<MetaApiHealthCheck>("Meta_API")
+    .AddCheck("Core_DB", new DatabaseHealthCheck(coreConnStr));
 
 builder.Services.AddTransient<ApiKeyAuthFilter>();
 builder.Services.AddTransient<TenantDbInitializer>();
@@ -299,6 +283,26 @@ builder.Services.AddScoped<Kernel>(sp =>
 
 var app = builder.Build();
 
+app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var response = new
+        {
+            status = report.Status.ToString(),
+            results = report.Entries.Select(e => new
+            {
+                key = e.Key,
+                value = e.Value.Status.ToString(),
+                description = e.Value.Description,
+                data = e.Value.Data
+            })
+        };
+        await context.Response.WriteAsJsonAsync(response);
+    }
+});
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -327,7 +331,7 @@ app.UseMiddleware<SessionContextMiddleware>();
 app.UseRateLimiter(); // Apply rate limiting BEFORE controllers
 
 app.MapControllers();
-app.MapHealthChecks("/health");
+// app.MapHealthChecks moved up
 app.MapHub<ReceptionistAgent.Api.Hubs.DashboardHub>("/hubs/dashboard");
 
 app.Run();

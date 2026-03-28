@@ -1,15 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.Data.SqlClient;
-using Dapper;
 using ReceptionistAgent.Api.Security;
+using ReceptionistAgent.Core.Repositories;
 using ReceptionistAgent.Core.Tenant;
+using System.Security.Claims;
 
 namespace ReceptionistAgent.Api.Controllers;
 
 /// <summary>
 /// Endpoint de exploración de base de datos de tenants.
-/// Permite inspeccionar el esquema y datos de bookings de la DB de un tenant.
 /// Protegido con API Key.
 /// </summary>
 [ApiController]
@@ -19,14 +18,16 @@ namespace ReceptionistAgent.Api.Controllers;
 public class DatabaseExplorerController : ControllerBase
 {
     private readonly ITenantResolver _tenantResolver;
+    private readonly IDatabaseAdminRepository _dbRepository;
 
-    public DatabaseExplorerController(ITenantResolver tenantResolver)
+    public DatabaseExplorerController(ITenantResolver tenantResolver, IDatabaseAdminRepository dbRepository)
     {
         _tenantResolver = tenantResolver;
+        _dbRepository = dbRepository;
     }
 
     /// <summary>
-    /// Obtiene el esquema de la tabla Bookings del tenant.
+    /// Obtiene el esquema de las tablas del tenant.
     /// </summary>
     [HttpGet("schema")]
     public async Task<IActionResult> GetSchema(string tenantId)
@@ -35,38 +36,10 @@ public class DatabaseExplorerController : ControllerBase
         if (tenant == null)
             return NotFound(new { error = $"Tenant '{tenantId}' no encontrado." });
 
-        if (!tenant.DbType.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Solo se puede explorar la base de datos de tenants con DbType 'SqlServer'." });
-
-        if (string.IsNullOrWhiteSpace(tenant.ConnectionString))
-            return BadRequest(new { error = "El tenant no tiene una ConnectionString configurada." });
-
         try
         {
-            using var connection = new SqlConnection(tenant.ConnectionString);
-            await connection.OpenAsync();
-
-            // Get table list
-            var tables = (await connection.QueryAsync<TableInfo>(
-                @"SELECT TABLE_NAME as TableName, TABLE_TYPE as TableType 
-                  FROM INFORMATION_SCHEMA.TABLES 
-                  WHERE TABLE_TYPE = 'BASE TABLE' 
-                  ORDER BY TABLE_NAME"
-            )).ToList();
-
-            // Get columns for the Bookings table (primary focus)
-            var bookingsColumns = (await connection.QueryAsync<ColumnInfo>(
-                @"SELECT 
-                    COLUMN_NAME as ColumnName,
-                    DATA_TYPE as DataType,
-                    IS_NULLABLE as IsNullable,
-                    CHARACTER_MAXIMUM_LENGTH as MaxLength,
-                    COLUMN_DEFAULT as DefaultValue,
-                    ORDINAL_POSITION as OrdinalPosition
-                  FROM INFORMATION_SCHEMA.COLUMNS 
-                  WHERE TABLE_NAME = 'Bookings'
-                  ORDER BY ORDINAL_POSITION"
-            )).ToList();
+            var tables = await _dbRepository.GetTablesAsync(tenant);
+            var bookingsColumns = await _dbRepository.GetTableColumnsAsync(tenant, "Bookings");
 
             return Ok(new
             {
@@ -76,9 +49,9 @@ public class DatabaseExplorerController : ControllerBase
                 bookingsSchema = bookingsColumns
             });
         }
-        catch (SqlException ex)
+        catch (Exception ex)
         {
-            return StatusCode(500, new { error = $"Error al conectar con la base de datos: {ex.Message}" });
+            return StatusCode(500, new { error = $"Error explorando esquema: {ex.Message}" });
         }
     }
 
@@ -92,27 +65,10 @@ public class DatabaseExplorerController : ControllerBase
         if (tenant == null)
             return NotFound(new { error = $"Tenant '{tenantId}' no encontrado." });
 
-        if (!tenant.DbType.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Solo se puede explorar la base de datos de tenants con DbType 'SqlServer'." });
-
-        if (string.IsNullOrWhiteSpace(tenant.ConnectionString))
-            return BadRequest(new { error = "El tenant no tiene una ConnectionString configurada." });
-
         try
         {
-            limit = Math.Clamp(limit, 1, 200);
-
-            using var connection = new SqlConnection(tenant.ConnectionString);
-            await connection.OpenAsync();
-
-            var bookings = (await connection.QueryAsync<dynamic>(
-                $"SELECT TOP (@Limit) * FROM Bookings ORDER BY CreatedAt DESC",
-                new { Limit = limit }
-            )).ToList();
-
-            var totalCount = await connection.ExecuteScalarAsync<int>(
-                "SELECT COUNT(*) FROM Bookings"
-            );
+            var bookings = await _dbRepository.GetRawBookingsAsync(tenant, limit);
+            var totalCount = await _dbRepository.GetTotalBookingsCountAsync(tenant);
 
             return Ok(new
             {
@@ -122,9 +78,9 @@ public class DatabaseExplorerController : ControllerBase
                 bookings
             });
         }
-        catch (SqlException ex)
+        catch (Exception ex)
         {
-            return StatusCode(500, new { error = $"Error al consultar bookings: {ex.Message}" });
+            return StatusCode(500, new { error = $"Error consultando bookings: {ex.Message}" });
         }
     }
 
@@ -138,35 +94,9 @@ public class DatabaseExplorerController : ControllerBase
         if (tenant == null)
             return NotFound(new { error = $"Tenant '{tenantId}' no encontrado." });
 
-        if (!tenant.DbType.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-            return BadRequest(new { error = "Solo se puede consultar la salud de la base de datos de tenants con DbType 'SqlServer'." });
-
-        if (string.IsNullOrWhiteSpace(tenant.ConnectionString))
-            return BadRequest(new { error = "El tenant no tiene una ConnectionString configurada." });
-
         try
         {
-            using var connection = new SqlConnection(tenant.ConnectionString);
-            await connection.OpenAsync();
-
-            var tablesToCheck = new[] { "Providers", "ChatSessions", "Reminders", "Bookings" };
-            var health = new Dictionary<string, object>();
-
-            foreach (var table in tablesToCheck)
-            {
-                var sql = @$"
-                    IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{table}')
-                        SELECT COUNT(*) FROM [{table}]
-                    ELSE
-                        SELECT -1";
-                
-                var count = await connection.ExecuteScalarAsync<int>(sql);
-                health[table] = new
-                {
-                    Exists = count >= 0,
-                    RowCount = count >= 0 ? count : 0
-                };
-            }
+            var health = await _dbRepository.GetDatabaseHealthAsync(tenant);
 
             return Ok(new
             {
@@ -175,15 +105,9 @@ public class DatabaseExplorerController : ControllerBase
                 health
             });
         }
-        catch (SqlException ex)
+        catch (Exception ex)
         {
-            return StatusCode(500, new { error = $"Error al consultar salud de la DB: {ex.Message}" });
+            return StatusCode(500, new { error = $"Error consultando salud de DB: {ex.Message}" });
         }
     }
 }
-
-public record TableInfo(string TableName, string TableType);
-public record ColumnInfo(
-    string ColumnName, string DataType, string IsNullable,
-    int? MaxLength, string? DefaultValue, int OrdinalPosition
-);

@@ -137,35 +137,88 @@ public class BookingPlugin
     }
 
     [KernelFunction]
-    [Description("Agenda una nueva cita. Si faltan datos, devuelve un error descriptivo. El documento de identidad del cliente es OBLIGATORIO.")]
+    [Description("Agenda una nueva cita. Los datos requeridos varían según el tipo de negocio. Siempre pide al menos nombre y teléfono. Consulta el prompt para saber qué campos adicionales son obligatorios.")]
     public async Task<string> BookAppointment(
-        [Description("Nombre completo del cliente")] string clientName,
-        [Description("Documento de identidad del cliente (cédula, DNI, etc.) - REQUERIDO")] string clientId,
-        [Description("Telefono celular del cliente")] string clientPhone,
-        [Description("Correo electronico del cliente (Opcional, usar 'no-email', 'no email' o dejar vacío si el cliente indica que no tiene. NUNCA obligar a proveerlo)")] string clientEmail,
-        [Description("Nombre del proveedor (ej: 'Dr. Ramírez') o ID (ej: 'DR001')")] string providerNameOrId,
-        [Description("Fecha para agendar la cita. Formato YYYY-MM-DD")] string stringDate,
-        [Description("Horario para agendar la cita. Formato 24 horas HH:MM")] string stringTime,
-        [Description("Razon de la cita")] string reason)
+        [Description("Nombre completo del cliente")] 
+        string clientName,
+        
+        [Description("Documento de identidad (cédula, DNI). Solo requerido si el negocio lo solicita. Usa 'no-id' si no aplica.")] 
+        string clientId,
+        
+        [Description("Teléfono del cliente")] 
+        string clientPhone,
+        
+        [Description("Correo electrónico. Usa 'no-email' si el cliente no tiene o no aplica.")] 
+        string clientEmail,
+        
+        [Description("Dirección del servicio. Solo requerida para servicios a domicilio. Usa 'no-address' si no aplica.")] 
+        string serviceAddress,
+        
+        [Description("Nombre o ID del proveedor")] 
+        string providerNameOrId,
+        
+        [Description("Fecha en formato YYYY-MM-DD")] 
+        string stringDate,
+        
+        [Description("Hora en formato HH:MM (24h)")] 
+        string stringTime,
+        
+        [Description("Motivo de la cita")] 
+        string reason,
+        
+        // Nuevos parámetros opcionales para FHIR R4 (salud)
+        [Description("Fecha de nacimiento en formato YYYY-MM-DD. Solo para tenants de salud.")] 
+        string birthDate = "",
+        
+        [Description("Sexo biológico: 'male', 'female', 'other'. Solo para tenants de salud.")] 
+        string gender = "",
+        
+        // Campos de veterinaria u otros personalizados
+        [Description("Datos adicionales específicos del negocio en formato 'campo:valor' separados por coma. Ejemplo: 'petName:Firulais,petSpecies:Perro'")] 
+        string customData = "")
     {
-        var invalidTerms = new[] { "no email", "no-email", "unknown", "no nombre", "string", "user", "no phone", "no-id", "no id" };
+        var requirements = _tenantContext.CurrentTenant?.BookingRequirements 
+                           ?? new BookingRequirements();
+        var modality     = _tenantContext.CurrentTenant?.ServiceModality 
+                           ?? ServiceModality.InPerson;
 
-        if (string.IsNullOrWhiteSpace(clientName) || invalidTerms.Any(t => clientName.Contains(t, StringComparison.OrdinalIgnoreCase)))
-            return "FALLO DE VALIDACIÓN: Falta el NOMBRE del cliente. NO inventes valores. PREGUNTA al usuario su nombre.";
+        // ─── Validaciones siempre obligatorias ───────────────────────────────────
+        
+        if (IsInvalidValue(clientName))
+            return "FALLO DE VALIDACIÓN: Falta el NOMBRE del cliente. PREGUNTA al usuario su nombre.";
 
-        if (string.IsNullOrWhiteSpace(clientId) || invalidTerms.Any(t => clientId.Contains(t, StringComparison.OrdinalIgnoreCase)))
-            return "FALLO DE VALIDACIÓN: Falta el DOCUMENTO DE IDENTIDAD del cliente. PREGUNTA al usuario su cédula o documento.";
-
-        if (string.IsNullOrWhiteSpace(clientPhone) || invalidTerms.Any(t => clientPhone.Contains(t, StringComparison.OrdinalIgnoreCase)))
+        if (IsInvalidValue(clientPhone))
             return "FALLO DE VALIDACIÓN: Falta el TELÉFONO. PREGUNTA al usuario su número.";
 
-        if (!string.IsNullOrWhiteSpace(clientEmail))
+        // ─── Validaciones condicionales por perfil del tenant ────────────────────
+        
+        if (requirements.RequiresClientId && IsInvalidValue(clientId))
+            return "FALLO DE VALIDACIÓN: Este negocio requiere el DOCUMENTO DE IDENTIDAD del cliente. PREGUNTA al usuario su cédula o documento.";
+
+        if (requirements.RequiresBirthDate && IsInvalidValue(birthDate))
+            return "FALLO DE VALIDACIÓN: Para registros de salud necesito la FECHA DE NACIMIENTO del paciente (formato YYYY-MM-DD).";
+
+        if (requirements.RequiresGender && IsInvalidValue(gender))
+            return "FALLO DE VALIDACIÓN: Para registros de salud necesito el SEXO BIOLÓGICO del paciente (masculino/femenino/otro).";
+
+        if (requirements.RequiresInsurance)
         {
-            var isInvalidTerm = invalidTerms.Any(t => clientEmail.Contains(t, StringComparison.OrdinalIgnoreCase));
-            if (!isInvalidTerm && !clientEmail.Contains('@'))
-            {
-                return "FALLO DE VALIDACIÓN: El formato del correo proporcionado no es válido. Debe contener '@'. Si el cliente no tiene correo, envía 'no-email'.";
-            }
+            // El seguro/EPS viaja en CustomFields, verificar que venga en customData
+            if (!customData.Contains("insurance:") && !customData.Contains("eps:"))
+                return "FALLO DE VALIDACIÓN: Este negocio requiere el SEGURO MÉDICO o EPS del paciente.";
+        }
+
+        // ─── Validación por modalidad ─────────────────────────────────────────────
+        
+        if (modality == ServiceModality.AtHome && IsInvalidValue(serviceAddress))
+            return "FALLO DE VALIDACIÓN: Para servicios A DOMICILIO necesito la DIRECCIÓN completa del cliente (calle, número, ciudad).";
+
+        // ─── Validación de campos personalizados ─────────────────────────────────
+        
+        foreach (var (fieldName, isRequired) in requirements.CustomRequiredFields)
+        {
+            if (isRequired && !customData.Contains($"{fieldName}:"))
+                return $"FALLO DE VALIDACIÓN: Este negocio requiere el campo '{fieldName}'. Por favor pregunta al cliente.";
         }
 
         try
@@ -205,25 +258,37 @@ public class BookingPlugin
                 return $"FALLO DE DISPONIBILIDAD: El horario {time:hh\\:mm} para el día {date:yyyy-MM-dd} ya no se encuentra disponible o no existe. Por favor, OBLIGADO verifica disponibilidad usando FindAvailableSlots y ofrece un nuevo horario real.";
             }
 
-            var customFields = new Dictionary<string, object>
+            // ─── Construir CustomFields dinámicamente ────────────────────────────────
+            var customFields = BuildCustomFields(
+                clientId, clientPhone, clientEmail, serviceAddress,
+                birthDate, gender, customData, requirements, modality);
+
+            var countryCode = _tenantContext.CurrentTenant?.PhoneCountryCode ?? "";
+            var timeZoneId = _tenantContext.CurrentTenant?.TimeZoneId ?? "UTC";
+
+            // --- IDEMPOTENCIA ---
+            var idempotencyKey = $"IDEM_{_sessionContext.SessionId}_{provider.Id}_{date:yyyyMMdd}_{time:hhmm}";
+            _logger.LogInformation("Checking idempotency for key: {Key}", idempotencyKey);
+
+            var existingBooking = await _bookingService.GetBookingByIdempotencyKeyAsync(idempotencyKey);
+            if (existingBooking != null)
             {
-                ["clientId"] = clientId,
-                ["phone"] = clientPhone,
-                ["email"] = clientEmail,
-                ["reason"] = reason
-            };
+                _logger.LogWarning("Duplicate booking attempt detected via idempotency key: {Key}. Code: {Code}", idempotencyKey, existingBooking.ConfirmationCode);
+                return $"SISTEMA: Ya procesamos esta solicitud. Tu cita previa está confirmada con el código {existingBooking.ConfirmationCode}. No se realizó un nuevo cargo ni reserva.";
+            }
 
             var booking = await _bookingService.CreateBookingAsync(
                 clientName,
                 provider.Id,
                 date,
                 time,
-                customFields);
+                customFields,
+                idempotencyKey);
 
             if (booking != null)
             {
                 // Auto-validar en el contexto de sesión
-                _sessionContext.ValidateClientId(clientId);
+                _sessionContext.ValidateClientId(!string.IsNullOrWhiteSpace(clientId) ? clientId : clientPhone);
                 _sessionContext.ValidateConfirmationCode(booking.ConfirmationCode);
 
                 // Agendar recordatorios automáticos (24h y 1h antes)
@@ -231,8 +296,6 @@ public class BookingPlugin
                 {
                     try
                     {
-                        var countryCode = _tenantContext.CurrentTenant?.PhoneCountryCode ?? "";
-                        var timeZoneId = _tenantContext.CurrentTenant?.TimeZoneId ?? "UTC";
                         await _reminderService.ScheduleRemindersForBookingAsync(booking, clientPhone, countryCode, timeZoneId);
                         _logger.LogInformation("Reminders scheduled for booking {Code}", booking.ConfirmationCode);
                     }
@@ -242,13 +305,7 @@ public class BookingPlugin
                     }
                 }
 
-                return $"ÉXITO: Cita confirmada exitosamente. \n" +
-                       $"Código de Confirmación: {booking.ConfirmationCode} \n" +
-                       $"Cliente: {clientName} \n" +
-                       $"Documento: {clientId} \n" +
-                       $"Proveedor: {provider.Name} ({provider.Role})\n" +
-                       $"Fecha: {date:yyyy-MM-dd} a las {time} \n" +
-                       $"INSTRUCCIÓN PARA EL AGENTE: Informa al usuario el código de confirmación y recuérdale llegar 15 minutos antes.";
+                return BuildSuccessMessage(booking, provider, date, time, modality, serviceAddress);
             }
 
             return "FALLO: El horario seleccionado ya no está disponible.";
@@ -257,6 +314,72 @@ public class BookingPlugin
         {
             return $"ERROR DEL SISTEMA: {ex.Message}";
         }
+    }
+
+    private static bool IsInvalidValue(string value)
+    {
+        var invalidTerms = new[]
+        {
+            "no email", "no-email", "unknown", "no nombre", "string",
+            "user", "no phone", "no-id", "no id", "no-address", "no address"
+        };
+        return string.IsNullOrWhiteSpace(value) ||
+               invalidTerms.Any(t => value.Contains(t, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Dictionary<string, object> BuildCustomFields(
+        string clientId, string clientPhone, string clientEmail, string serviceAddress,
+        string birthDate, string gender, string customData,
+        BookingRequirements requirements, ServiceModality modality)
+    {
+        var fields = new Dictionary<string, object>
+        {
+            ["phone"] = clientPhone,
+        };
+
+        // Solo agregar si el campo tiene valor real
+        if (!IsInvalidValue(clientId))      fields["clientId"]      = clientId;
+        if (!IsInvalidValue(clientEmail))   fields["email"]         = clientEmail;
+        if (!IsInvalidValue(serviceAddress)) fields["serviceAddress"] = serviceAddress;
+        if (!IsInvalidValue(birthDate))     fields["birthDate"]     = birthDate;
+        if (!IsInvalidValue(gender))        fields["gender"]        = gender;
+
+        fields["serviceModality"] = modality.ToString();
+
+        // Parsear customData: "petName:Firulais,petSpecies:Perro"
+        if (!string.IsNullOrWhiteSpace(customData))
+        {
+            foreach (var pair in customData.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var parts = pair.Split(':', 2);
+                if (parts.Length == 2)
+                    fields[parts[0].Trim()] = parts[1].Trim();
+            }
+        }
+
+        return fields;
+    }
+
+    private static string BuildSuccessMessage(
+        BookingRecord booking, ServiceProvider provider,
+        DateTime date, TimeSpan time, ServiceModality modality, string serviceAddress)
+    {
+        var baseMessage = $"ÉXITO: Cita confirmada.\n" +
+                          $"Código: {booking.ConfirmationCode}\n" +
+                          $"Cliente: {booking.ClientName}\n" +
+                          $"Proveedor: {provider.Name} ({provider.Role})\n" +
+                          $"Fecha: {date:yyyy-MM-dd} a las {time:hh\\:mm}\n";
+
+        var modalityMessage = modality switch
+        {
+            ServiceModality.AtHome  => $"Modalidad: A domicilio en {serviceAddress}\n" +
+                                       "INSTRUCCIÓN: Informa al cliente que el proveedor llegará a su domicilio.",
+            ServiceModality.Virtual => "Modalidad: Virtual. INSTRUCCIÓN: Informa que recibirá el enlace de conexión.",
+            ServiceModality.Hybrid  => "INSTRUCCIÓN: Confirma con el cliente la modalidad elegida.",
+            _                       => "INSTRUCCIÓN: Informa al cliente el código de confirmación y que llegue 15 minutos antes."
+        };
+
+        return baseMessage + modalityMessage;
     }
 
     [KernelFunction]

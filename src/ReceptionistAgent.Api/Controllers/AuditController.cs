@@ -1,5 +1,5 @@
 using ReceptionistAgent.Core.Models;
-using ReceptionistAgent.Connectors.Security;
+using ReceptionistAgent.Core.Security;
 using ReceptionistAgent.Api.Security;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;

@@ -22,7 +22,10 @@ public class RecepcionistAgent : IRecepcionistAgent
 
     public async Task<string> RespondAsync(string userMessage, ChatHistory chatHistory)
     {
-        chatHistory.AddUserMessage(userMessage);
+        if (!string.IsNullOrWhiteSpace(userMessage))
+        {
+            chatHistory.AddUserMessage(userMessage);
+        }
 
         var result = await _chatCompletionService.GetChatMessageContentAsync(
             chatHistory,

@@ -8,9 +8,11 @@ using ReceptionistAgent.Api.Security;
 using ReceptionistAgent.Core.Security;
 using ReceptionistAgent.Api.Services;
 using ReceptionistAgent.Core.Services;
+using ReceptionistAgent.Core.Utils;
 using System.Security.Cryptography;
 using System.Text;
 using Twilio.AspNet.Common;
+using Microsoft.Extensions.DependencyInjection;
 using Twilio.AspNet.Core;
 using Twilio.TwiML;
 using Microsoft.AspNetCore.RateLimiting;
@@ -22,21 +24,21 @@ namespace ReceptionistAgent.Api.Controllers;
 [EnableRateLimiting("Global")]
 public class TwilioWebhookController : TwilioController
 {
-    private readonly IChatOrchestrator _orchestrator;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly TenantContext _tenantContext;
 
     public TwilioWebhookController(
-        IChatOrchestrator orchestrator,
+        IServiceScopeFactory scopeFactory,
         TenantContext tenantContext)
     {
-        _orchestrator = orchestrator;
+        _scopeFactory = scopeFactory;
         _tenantContext = tenantContext;
     }
 
     [HttpPost]
     [Consumes("application/x-www-form-urlencoded")]
     // [ValidateRequest] // Filtro de seguridad de Twilio. COMENTADO PARA PRUEBAS LOCALES.
-    public async Task<TwiMLResult> Webhook([FromRoute] string tenantId, [FromForm] SmsRequest request)
+    public TwiMLResult Webhook([FromRoute] string tenantId, [FromForm] SmsRequest request)
     {
         if (!_tenantContext.IsResolved)
         {
@@ -53,17 +55,51 @@ public class TwilioWebhookController : TwilioController
 
         // Mapeo determinístico: Teléfono + Tenant -> Guid de SessionId
         var sessionId = GenerateSessionId(tenantId, phone);
+        var clientTimeZone = TimeZoneHelper.InferTimeZoneFromPhone(phone, _tenantContext.CurrentTenant?.TimeZoneId ?? "UTC");
+        var messageId = request.MessageSid; // Twilio Message SID for deduplication
 
-        // ═══ Ejecutar pipeline mediante el orquestador ═══
-        var result = await _orchestrator.ProcessMessageAsync(
-            message: message,
-            sessionId: sessionId,
-            tenantId: tenantId,
-            eventTypePrefix: "WhatsApp",
-            additionalMetadata: new Dictionary<string, string> { ["phone"] = phone }
-        );
+        // ═══ Ejecutar pipeline en segundo plano para evitar timeouts de Twilio ═══
+        var currentTenant = _tenantContext.CurrentTenant;
+        _ = Task.Run(async () => 
+        {
+            try 
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var orchestrator = scope.ServiceProvider.GetRequiredService<IChatOrchestrator>();
+                var messageFactory = scope.ServiceProvider.GetRequiredService<IMessageSenderFactory>();
+                var tContext = scope.ServiceProvider.GetRequiredService<TenantContext>();
+                
+                // Re-hidratar contexto en el nuevo scope
+                tContext.CurrentTenant = currentTenant;
 
-        return TwiMLMessage(result.Response);
+                var result = await orchestrator.ProcessMessageAsync(
+                    message: message,
+                    sessionId: sessionId,
+                    tenantId: tenantId,
+                    eventTypePrefix: "WhatsApp",
+                    additionalMetadata: new Dictionary<string, string>
+                    {
+                        ["phone"] = phone,
+                        ["clientTimeZone"] = clientTimeZone
+                    },
+                    messageId: messageId
+                );
+
+                if (currentTenant != null)
+                {
+                    var sender = messageFactory.CreateSender(currentTenant);
+                    await sender.SendAsync(phone, result.Response);
+                }
+            }
+            catch (Exception ex)
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var logger = scope.ServiceProvider.GetRequiredService<ILogger<TwilioWebhookController>>();
+                logger.LogError(ex, "Error in Twilio background processing");
+            }
+        });
+
+        return TwiMLMessage(""); // Respuesta vacía inmediata, la real se envía asíncronamente
     }
 
     private TwiMLResult TwiMLMessage(string message)
