@@ -96,6 +96,25 @@ public class InMemoryClientAdapter : IClientDataAdapter
         return Task.FromResult(exists);
     }
 
+    public Task<BookingStats> GetBookingStatsAsync()
+    {
+        var bookingsInRange = _bookings.Values
+            .Where(b => !b.IsDeleted)
+            .ToList();
+
+        var stats = new BookingStats
+        {
+            TotalBookings = bookingsInRange.Count,
+            ScheduledCount = bookingsInRange.Count(b => b.Status == BookingStatus.Scheduled),
+            ConfirmedCount = bookingsInRange.Count(b => b.Status == BookingStatus.Confirmed),
+            CancelledCount = bookingsInRange.Count(b => b.Status == BookingStatus.Cancelled),
+            CompletedCount = bookingsInRange.Count(b => b.Status == BookingStatus.Completed),
+            NoShowCount = bookingsInRange.Count(b => b.Status == BookingStatus.NoShow),
+            EscalatedCount = bookingsInRange.Count(b => b.Status == BookingStatus.EscalatedToHuman)
+        };
+        return Task.FromResult(stats);
+    }
+
     // === Client Lookups ===
 
     public Task<BookingRecord?> GetBookingByClientIdAsync(string clientId)
@@ -120,6 +139,11 @@ public class InMemoryClientAdapter : IClientDataAdapter
     }
 
     // === Service Providers ===
+
+    public Task<int> GetProviderCountAsync()
+    {
+        return Task.FromResult(_providers.Count);
+    }
 
     public Task<List<ServiceProvider>> GetAllProvidersAsync()
     {
