@@ -53,10 +53,10 @@ public class MetaWebhookController : ControllerBase
 
     /// <summary>
     /// Recibe mensajes entrantes de WhatsApp Cloud API.
-    /// Meta espera un 200 OK inmediato — el procesamiento ocurre en background.
+    /// Procesamos de forma síncrona para evitar que Cloud Run estrangule la CPU (throttle a 0).
     /// </summary>
     [HttpPost]
-    public IActionResult ReceiveMessage([FromBody] JsonElement body)
+    public async Task<IActionResult> ReceiveMessage([FromBody] JsonElement body)
     {
         try
         {
@@ -65,12 +65,13 @@ public class MetaWebhookController : ControllerBase
                 objProp.ValueKind == JsonValueKind.String &&
                 objProp.GetString() == "whatsapp_business_account")
             {
-                // Meta expects a 200 OK within 10 seconds.
-                // Clone the document so the background thread doesn't throw ObjectDisposedException
+                // Clone the document so the object isn't disposed during async execution
                 var clonedBody = body.Clone();
                 
-                // We fire and forget the processing logic to avoid timeouts and retries.
-                _ = Task.Run(async () => await ProcessPayloadAsync(clonedBody)); 
+                // Procesamiento síncrono: Mantiene la request HTTP y la CPU vivas en Cloud Run.
+                // Si toma más de 10s, Meta cortará y reintentará, pero la caché de
+                // deduplicación en ChatOrchestrator absorberá el reintento devolviendo 200 rápido y deteniéndolo.
+                await ProcessPayloadAsync(clonedBody); 
                 return Ok();
             }
 
