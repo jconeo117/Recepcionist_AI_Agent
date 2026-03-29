@@ -174,18 +174,22 @@ public class ChatOrchestrator : IChatOrchestrator
             // Pasamos string.Empty porque ya agregamos el mensaje manualmente arriba.
             response = await _agent.RespondAsync(string.Empty, history);
         }
-        catch (Exception ex) when (ex.Message.Contains("tool_use_failed"))
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Error processing message with Semantic Kernel for session {SessionId}", sessionId);
             if (_hubContext != null) await _hubContext.Clients.Group(tenantId).SendAsync("NotifyTyping", sessionId, false);
             
-            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-            var historyJson = System.Text.Json.JsonSerializer.Serialize(history, options);
-            Console.WriteLine($"\n[GROQ TOOL_USE_FAILED DEBUG] --- ChatHistory sent to Groq:\n{historyJson}\n------------------\n");
+            if (ex.Message.Contains("tool_use_failed"))
+            {
+                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                var historyJson = System.Text.Json.JsonSerializer.Serialize(history, options);
+                Console.WriteLine($"\n[TOOL_USE_FAILED DEBUG] --- ChatHistory:\n{historyJson}\n------------------\n");
+            }
 
-            // Retornar mensaje amigable en lugar de crash con 500
+            // Retornar mensaje amigable en lugar de quedarse en silencio
             return new OrchestrationResult
             {
-                Response = "Disculpe, tuve un problema procesando su solicitud. ¿Podría reformular su mensaje o intentar de nuevo?",
+                Response = "Disculpe, mi sistema central está tardando demasiado en responder o ha encontrado un error. ¿Podría intentar de nuevo en unos momentos?",
                 WasFiltered = false
             };
         }
