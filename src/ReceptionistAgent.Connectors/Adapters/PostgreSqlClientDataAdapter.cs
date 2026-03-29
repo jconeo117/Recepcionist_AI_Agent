@@ -13,9 +13,13 @@ public class PostgreSqlClientDataAdapter : IClientDataAdapter
     private readonly string _connectionString;
     private readonly IBookingBackupService _backupService;
     private readonly ILogger<PostgreSqlClientDataAdapter> _logger;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _schemaCheckedByTenant = new();
     private bool _columnExistsChecked = false;
 
-    public PostgreSqlClientDataAdapter(string connectionString, IBookingBackupService backupService, ILogger<PostgreSqlClientDataAdapter> logger)
+    public PostgreSqlClientDataAdapter(
+        string connectionString, 
+        IBookingBackupService backupService, 
+        ILogger<PostgreSqlClientDataAdapter> logger)
     {
         _connectionString = connectionString;
         _backupService = backupService;
@@ -24,7 +28,7 @@ public class PostgreSqlClientDataAdapter : IClientDataAdapter
 
     private async Task EnsureIdempotencyColumnAsync()
     {
-        if (_columnExistsChecked) return;
+        if (_schemaCheckedByTenant.ContainsKey(_connectionString)) return;
 
         using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
