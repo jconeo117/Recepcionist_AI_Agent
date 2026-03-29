@@ -60,21 +60,28 @@ public class MetaWebhookController : ControllerBase
     {
         try
         {
-            if (body.TryGetProperty("object", out var objProp) &&
+            if (body.ValueKind == JsonValueKind.Object &&
+                body.TryGetProperty("object", out var objProp) &&
+                objProp.ValueKind == JsonValueKind.String &&
                 objProp.GetString() == "whatsapp_business_account")
             {
                 // Meta expects a 200 OK within 10 seconds.
+                // Clone the document so the background thread doesn't throw ObjectDisposedException
+                var clonedBody = body.Clone();
+                
                 // We fire and forget the processing logic to avoid timeouts and retries.
-                _ = Task.Run(async () => await ProcessPayloadAsync(body)); 
+                _ = Task.Run(async () => await ProcessPayloadAsync(clonedBody)); 
                 return Ok();
             }
 
-            return NotFound();
+            // Always return OK even for unhandled payloads (like statuses) to stop Meta from retrying
+            return Ok();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error parsing Meta webhook payload.");
-            return StatusCode(500);
+            // Returning OK regardless, to avoid webhook disablement upon continuous 500s from Meta's side
+            return Ok();
         }
     }
 
