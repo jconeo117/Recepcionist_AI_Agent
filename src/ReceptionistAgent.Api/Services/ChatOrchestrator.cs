@@ -29,6 +29,7 @@ public class ChatOrchestrator : IChatOrchestrator
     private readonly Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> _hubContext;
     private readonly ISessionBlacklistService _blacklistService;
     private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _cache;
+    private readonly IWebhookDeduplicator _deduplicator;
     private readonly ILogger<ChatOrchestrator> _logger;
 
     public ChatOrchestrator(
@@ -44,6 +45,7 @@ public class ChatOrchestrator : IChatOrchestrator
         Microsoft.AspNetCore.SignalR.IHubContext<ReceptionistAgent.Api.Hubs.DashboardHub> hubContext,
         ISessionBlacklistService blacklistService,
         Microsoft.Extensions.Caching.Memory.IMemoryCache cache,
+        IWebhookDeduplicator deduplicator,
         ILogger<ChatOrchestrator> logger)
     {
         _agent = agent;
@@ -58,6 +60,7 @@ public class ChatOrchestrator : IChatOrchestrator
         _hubContext = hubContext;
         _blacklistService = blacklistService;
         _cache = cache;
+        _deduplicator = deduplicator;
         _logger = logger;
     }
 
@@ -72,19 +75,15 @@ public class ChatOrchestrator : IChatOrchestrator
         _sessionContext.SessionId = sessionId;
         var metadata = additionalMetadata ?? new Dictionary<string, string>();
 
-        // ═══ PASO -1: Deduplicación (Evitar doble llamada por retries de Webhooks) ═══
+        // ═══ PASO -1: Deduplicación Persistente (Evitar retries de Meta por timeouts en Cloud Run) ═══
         if (!string.IsNullOrEmpty(messageId))
         {
-            var cacheKey = $"msg_proc_{messageId}";
-            if (_cache.TryGetValue(cacheKey, out object? cachedObj))
+            var isNewMessage = await _deduplicator.TryRegisterMessageAsync(messageId, tenantId);
+            if (!isNewMessage)
             {
-                var existingResult = cachedObj as OrchestrationResult;
-                _logger.LogInformation("Message {MessageId} already processed/processing. Skipping.", messageId);
-                return existingResult ?? new OrchestrationResult { Response = "Procesando..." };
+                _logger.LogInformation("Persistent duplicate detected for MessageId {MessageId}. Skipping.", messageId);
+                return new OrchestrationResult { Response = string.Empty, IsDuplicate = true, WasFiltered = true };
             }
-
-            // Marcamos como "en proceso" con un resultado vacío temporal
-            _cache.Set(cacheKey, (OrchestrationResult?)null, TimeSpan.FromMinutes(10));
         }
 
         // ═══ PASO 0: Blacklist Check (Ahorro de recursos) ═══
@@ -243,12 +242,6 @@ public class ChatOrchestrator : IChatOrchestrator
             WasFiltered = filterResult.WasModified,
             RedactedItems = filterResult.RedactedItems
         };
-
-        // Cachear resultado final para deduplicación
-        if (!string.IsNullOrEmpty(messageId))
-        {
-            _cache.Set($"msg_proc_{messageId}", orchestrationResult, TimeSpan.FromMinutes(10));
-        }
 
         return orchestrationResult;
     }

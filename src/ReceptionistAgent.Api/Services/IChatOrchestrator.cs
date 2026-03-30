@@ -10,6 +10,7 @@ public class OrchestrationResult
     public string Response { get; set; } = string.Empty;
     public bool WasFiltered { get; set; }
     public List<string> RedactedItems { get; set; } = new();
+    public bool IsDuplicate { get; set; }
 }
 
 public interface IChatOrchestrator

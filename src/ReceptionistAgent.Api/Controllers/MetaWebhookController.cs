@@ -186,6 +186,12 @@ public class MetaWebhookController : ControllerBase
             additionalMetadata: metadata,
             messageId: messageId);
 
+        if (result.IsDuplicate)
+        {
+            _logger.LogInformation("Webhook is a duplicate retry for MessageId {MsgId}. Skipped sending response to WhatsApp.", messageId);
+            return;
+        }
+
         var sender = messageFactory.CreateSender(tenantConfig);
         await sender.SendAsync(fromPhone, result.Response);
 

@@ -169,12 +169,14 @@ if (isPostgres)
     builder.Services.AddSingleton<IAuditLogger>(_ => new PostgreSqlAuditLogger(coreConnStr));
     builder.Services.AddSingleton<IBillingService>(_ => new PostgreSqlBillingService(coreConnStr));
     builder.Services.AddSingleton<IBookingBackupService>(_ => new PostgreSqlBookingBackupService(coreConnStr));
+    builder.Services.AddSingleton<IWebhookDeduplicator>(sp => new PostgreSqlWebhookDeduplicator(coreConnStr, sp.GetRequiredService<ILoggerFactory>()));
 }
 else
 {
     builder.Services.AddSingleton<IAuditLogger>(_ => new SqlAuditLogger(coreConnStr));
     builder.Services.AddSingleton<IBillingService>(_ => new SqlBillingService(coreConnStr));
     builder.Services.AddSingleton<IBookingBackupService>(_ => new SqlBookingBackupService(coreConnStr));
+    builder.Services.AddSingleton<IWebhookDeduplicator>(sp => new SqlWebhookDeduplicator(coreConnStr, sp.GetRequiredService<ILoggerFactory>()));
 }
 
 builder.Services.AddScoped<IReminderService>(sp =>
